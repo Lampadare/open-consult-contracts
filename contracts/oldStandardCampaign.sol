@@ -2,160 +2,40 @@
 
 pragma solidity ^0.8.9;
 
-import "./Utilities.sol";
+import "./CampaignManager.sol";
+import "./ProjectManager.sol";
+import "./TaskManager.sol";
 import "./FundingsManager.sol";
+import "./Utilities.sol";
 
 contract StandardCampaign {
+    /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
+    /// STRUCTS DECLARATIONS
     using Utilities for uint256[];
     using Utilities for address[];
     using Utilities for address payable[];
     using FundingsManager for FundingsManager.Fundings;
     using FundingsManager for FundingsManager.Fundings[];
-
-    /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
-    /// STRUCTS DECLARATIONS
-    struct Campaign {
-        // Description of the campaign
-        string title;
-        string metadata;
-        CampaignStyle style;
-        // Timestamps & status
-        uint256 creationTime;
-        //uint256 deadline;
-        CampaignStatus status;
-        // Stakeholders
-        address payable creator;
-        address payable[] owners;
-        address payable[] acceptors;
-        address payable[] workers;
-        address payable[] allTimeStakeholders;
-        // Stake
-        Fundings stake;
-        // Fundings (contains funders)
-        Fundings[] fundings;
-        // Child projects & All child projects (contains IDs)
-        uint256[] directChildProjects;
-        uint256[] allChildProjects;
-    }
+    using CampaignManager for CampaignManager.Campaign;
+    using ProjectManager for ProjectManager.Project;
+    using TaskManager for TaskManager.Task;
+    using ApplicationManager for ApplicationManager.Application;
 
     // Mapping of campaign IDs to campaigns, IDs are numbers starting from 0
-    mapping(uint256 => Campaign) public campaigns;
+    mapping(uint256 => CampaignManager.Campaign) public campaigns;
     uint256 public campaignCount = 0;
 
-    struct Project {
-        // Description of the project
-        string title;
-        string metadata;
-        // Contribution weight
-        uint256 weight;
-        uint256 reward;
-        // Timestamps
-        uint256 creationTime;
-        Vote[] fastForward;
-        NextMilestone nextMilestone;
-        ProjectStatus status;
-        // Workers & Applications
-        bool applicationRequired;
-        uint256[] applications;
-        address[] workers;
-        address[] pastWorkers;
-        // Parent Campaign & Project (contains IDs)
-        uint256 parentCampaign;
-        uint256 parentProject;
-        // Child Tasks & Projects (contains IDs)
-        uint256[] childProjects;
-        uint256[] childTasks;
-    }
-
     // Mapping of project IDs to projects, IDs are numbers starting from 0
-    mapping(uint256 => Project) public projects;
+    mapping(uint256 => ProjectManager.Project) public projects;
     uint256 public projectCount = 0;
 
-    struct Task {
-        // Description of the task
-        string title;
-        string metadata;
-        // Contribution weight
-        uint256 weight;
-        uint256 reward;
-        bool paid;
-        // Timestamps
-        uint256 creationTime;
-        uint256 deadline;
-        // Worker
-        address payable worker;
-        // Completion
-        Submission submission;
-        bool closed;
-        // Parent Campaign & Project (contains IDs)
-        uint256 parentProject;
-    }
-
     // Mapping of task IDs to tasks, IDs are numbers starting from 0
-    mapping(uint256 => Task) public tasks;
+    mapping(uint256 => TaskManager.Task) public tasks;
     uint256 public taskCount = 0;
 
-    struct Application {
-        // Description of the application
-        string metadata;
-        address applicant;
-        bool accepted;
-        Fundings enrolStake;
-        // Parent Project (contains IDs)
-        uint256 parentProject;
-    }
-
     // Mapping of task IDs to tasks, IDs are numbers starting from 0
-    mapping(uint256 => Application) public applications;
+    mapping(uint256 => ApplicationManager.Application) public applications;
     uint256 public applicationCount = 0;
-
-    struct Submission {
-        string metadata;
-        SubmissionStatus status;
-    }
-
-    struct NextMilestone {
-        uint256 startStageTimestamp;
-        uint256 startGateTimestamp;
-        uint256 startSettledTimestamp;
-    }
-
-    struct Vote {
-        address voter;
-        bool vote;
-    }
-
-    enum CampaignStyle {
-        Private,
-        PrivateThenOpen,
-        Open
-    }
-
-    enum CampaignStatus {
-        Running,
-        Closed
-    }
-
-    enum ProjectStatus {
-        Stage,
-        Gate,
-        Settled,
-        Closed
-    }
-
-    enum TaskStatusFilter {
-        NotClosed,
-        Closed,
-        All
-    }
-
-    enum SubmissionStatus {
-        None,
-        Pending,
-        Accepted,
-        Declined,
-        Disputed
-    }
 
     // Minimum stake required to create a Private campaign
     uint256 public minStake = 0.0025 ether;
@@ -355,9 +235,8 @@ contract StandardCampaign {
     /// CAMPAIGN WRITE FUNCTIONS 🔻🔻🔻🔻🔻🔻🔻🔻🔻🔻
     // Create a new campaign, optionally fund it ✅
     function makeCampaign(
-        string memory _title,
         string memory _metadata,
-        CampaignStyle _style,
+        CampaignManager.CampaignStyle _style,
         address payable[] memory _owners,
         address payable[] memory _acceptors,
         uint256 _stake,
@@ -368,40 +247,20 @@ contract StandardCampaign {
         isStakeAndFundingIntended(_stake, _funding)
         returns (uint256 id)
     {
-        //PRIVATE CAMPAIGN REQ (open campaigns don't have deadlines)
         if (_stake >= minStake) {
-            Campaign storage campaign = campaigns[campaignCount];
+            CampaignManager.Campaign storage campaign = campaigns[
+                campaignCount
+            ];
 
-            campaign.title = _title;
-            campaign.metadata = _metadata;
-            campaign.style = _style;
-            campaign.creationTime = block.timestamp;
-            //campaign.deadline = _deadline;
-            campaign.status = CampaignStatus.Running;
-            campaign.creator = payable(msg.sender);
-            campaign.owners.push(payable(msg.sender));
-            for (uint256 i = 0; i < _owners.length; i++) {
-                campaign.owners.push((_owners[i]));
-                campaign.allTimeStakeholders.push((_owners[i]));
-            }
-            for (uint256 i = 0; i < _acceptors.length; i++) {
-                campaign.acceptors.push((_acceptors[i]));
-                campaign.allTimeStakeholders.push((_acceptors[i]));
-            }
-            campaign.allTimeStakeholders.push(payable(msg.sender));
-            campaign.stake.funder = payable(msg.sender);
-            campaign.stake.funding = _stake;
-            campaign.stake.amountUsed = 0;
-            campaign.stake.fullyRefunded = false;
-
-            if (_funding > 0) {
-                Fundings memory newFunding;
-                newFunding.funder = payable(msg.sender);
-                newFunding.funding = _funding;
-                campaign.stake.amountUsed = 0;
-                newFunding.fullyRefunded = false;
-                campaign.fundings.push(newFunding);
-            }
+            CampaignManager.makeCampaign(
+                campaign,
+                _metadata,
+                _style,
+                _owners,
+                _acceptors,
+                _stake,
+                _funding
+            );
 
             campaignCount++;
             return campaignCount - 1;
@@ -564,114 +423,6 @@ contract StandardCampaign {
             unlockTheFundsForProjectPostCleanup(campaign.allChildProjects[i]);
         }
     }
-
-    // BETTER SOLUTION BUT NEEDS CHECKS AND MODELLING -> no time
-    // // Proportional Fund Locker Function, adds _expense to locked funds by splitting it
-    // // into the different fundings of the campaign proportionally to their effective contributions 🧐
-    // function fundLockAmount(
-    //     uint256 _id,
-    //     uint256 _expense
-    // ) internal isCampaignExisting(_id) isEffectiveBalanceMoreThanZero(_id) {
-    //     Campaign storage campaign = campaigns[_id];
-    //     uint256 currentEffectiveCampaignBalance = getEffectiveCampaignBalance(
-    //         _id
-    //     );
-
-    //     // If the expense is to be locked, add it to the amountUsed of the fundings
-    //     // loop over all the non fullyRefunded fundings and add a part to amountUsed which is proportional to how much the funding is
-    //     for (uint256 i = 0; i < campaign.fundings.length; i++) {
-    //         if (!campaign.fundings[i].fullyRefunded) {
-    //             // Effective balance of this specific funding
-    //             uint256 effectiveBalanceOfFunding = campaign
-    //                 .fundings[i]
-    //                 .funding -
-    //                 campaign.fundings[i].amountUsed -
-    //                 campaign.fundings[i].amountLocked;
-
-    //             // Fraction of the total effective campaign balance that this funding is
-    //             uint256 fractionOfTotalEffectiveCampaignBalance = effectiveBalanceOfFunding /
-    //                     currentEffectiveCampaignBalance;
-
-    //             // Amount of the expense that should be used from this funding
-    //             uint256 proportionalLockedAmount = _expense *
-    //                 fractionOfTotalEffectiveCampaignBalance;
-
-    //             // Add the proportional locked amount to the amountLocked of the funding
-    //             campaign.fundings[i].amountLocked += proportionalLockedAmount;
-    //         }
-    //     }
-    // }
-    // // Proportional Fund User Function, adds _expense to used funds by splitting it
-    // // into the different fundings of the campaign proportionally to their effective contributions 🧐
-    // function fundUseLockedAmount(
-    //     uint256 _id,
-    //     uint256 _expense
-    // ) internal isCampaignExisting(_id) isLockedBalanceMoreThanZero(_id) {
-    //     Campaign storage campaign = campaigns[_id];
-    //     uint256 currentLockedCampaignBalance = getCampaignLockedRewards(_id);
-
-    //     // If the expense is to be used, add it to the amountUsed of the fundings
-    //     // loop over all the non fullyRefunded fundings and add a part to amountUsed which is proportional to how much the funding is
-    //     for (uint256 i = 0; i < campaign.fundings.length; i++) {
-    //         if (!campaign.fundings[i].fullyRefunded) {
-    //             // Locked balance of this specific funding
-    //             uint256 lockedFundingBalance = campaign
-    //                 .fundings[i]
-    //                 .amountLocked;
-
-    //             // Fraction of the total locked campaign balance that this funding is
-    //             uint256 fractionOfTotalLockedCampaignBalance = lockedFundingBalance /
-    //                     currentLockedCampaignBalance;
-
-    //             // Amount of the expense that should be used from this funding
-    //             uint256 proportionalUseAmount = _expense *
-    //                 fractionOfTotalLockedCampaignBalance;
-
-    //             // Add the proportional used amount to the amountUsed of the funding
-    //             campaign.fundings[i].amountUsed += proportionalUseAmount;
-    //             // Remove the proportional locked amount from the amountLocked of the funding
-    //             campaign.fundings[i].amountLocked -= proportionalUseAmount;
-
-    //             if (
-    //                 campaign.fundings[i].amountUsed ==
-    //                 campaign.fundings[i].funding
-    //             ) {
-    //                 campaign.fundings[i].fullyRefunded = true;
-    //             }
-    //         }
-    //     }
-    // }
-    // // Proportional Fund Unlocker Function, removes _expense from locked funds by splitting it
-    // // into the different fundings of the campaign proportionally to their effective contributions 🧐
-    // function fundUnlockAmount(
-    //     uint256 _id,
-    //     uint256 _expense
-    // ) internal isCampaignExisting(_id) isLockedBalanceMoreThanZero(_id) {
-    //     Campaign storage campaign = campaigns[_id];
-    //     uint256 currentLockedCampaignBalance = getCampaignLockedRewards(_id);
-
-    //     // If the expense is to be unlocked, remove it from the amountLocked of the fundings
-    //     // loop over all the non fullyRefunded fundings and remove a part from amountLocked which is proportional to how much the funding is
-    //     for (uint256 i = 0; i < campaign.fundings.length; i++) {
-    //         if (!campaign.fundings[i].fullyRefunded) {
-    //             // Locked balance of this specific funding
-    //             uint256 lockedFundingBalance = campaign
-    //                 .fundings[i]
-    //                 .amountLocked;
-
-    //             // Fraction of the total locked campaign balance that this funding is
-    //             uint256 fractionOfTotalLockedCampaignBalance = lockedFundingBalance /
-    //                     currentLockedCampaignBalance;
-
-    //             // Amount of the expense that should be unlocked from this funding
-    //             uint256 proportionalUnlockAmount = _expense *
-    //                 fractionOfTotalLockedCampaignBalance;
-
-    //             // Remove the proportional unlocked amount from the amountLocked of the funding
-    //             campaign.fundings[i].amountLocked -= proportionalUnlockAmount;
-    //         }
-    //     }
-    // }
 
     /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// CAMPAIGN READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹

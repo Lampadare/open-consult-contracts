@@ -11,8 +11,6 @@ library FundingsManager {
         bool fullyRefunded; // A boolean storing whether or not the contribution has been fully refunded or fully used
     }
 
-    using FundingsManager for Fundings[];
-
     function fundLockAmount(
         Fundings[] storage _fundings,
         uint256 _expense
