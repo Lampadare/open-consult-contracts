@@ -5,6 +5,7 @@ pragma solidity ^0.8.9;
 import "./CampaignManager.sol";
 import "./ProjectManager.sol";
 import "./TaskManager.sol";
+import "./ApplicationManager.sol";
 import "./FundingsManager.sol";
 import "./Utilities.sol";
 
@@ -56,42 +57,29 @@ contract StandardCampaign {
     /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
     /// MODIFIERS
     // Timestamps
-    modifier isFutureTimestamp(uint256 timestamp) {
-        require(timestamp > block.timestamp, "Timestamp must be in the future");
-        _;
+    function checkCampaignExists(uint256 _id) public view {
+        require(_id < campaignCount, "E1");
     }
 
-    // Does it exist?
-    modifier isCampaignExisting(uint256 _id) {
-        require(_id < campaignCount, "Campaign does not exist");
-        _;
+    function checkProjectExists(uint256 _id) public view {
+        require(_id < projectCount, "E1");
     }
-    modifier isProjectExisting(uint256 _id) {
-        require(_id < projectCount, "Project does not exist");
-        _;
+
+    function checkTaskExists(uint256 _id) public view {
+        require(_id < taskCount, "E1");
     }
-    modifier isTaskExisting(uint256 _id) {
-        require(_id < taskCount, "Task does not exist");
-        _;
-    }
-    modifier isApplicationExisting(uint256 _id) {
-        require(_id < applicationCount, "Application does not exist");
-        _;
+
+    function checkApplicationExists(uint256 _id) public view {
+        require(_id < applicationCount, "E1");
     }
 
     // Campaign Roles
     modifier isCampaignCreator(uint256 _id) {
-        require(
-            msg.sender == campaigns[_id].creator,
-            "Sender must be the campaign creator"
-        );
+        require(msg.sender == campaigns[_id].creator, "E2");
         _;
     }
     modifier isCampaignOwner(uint256 _id) {
-        require(
-            checkIsCampaignOwner(_id),
-            "Sender must be an owner of the campaign"
-        );
+        require(checkIsCampaignOwner(_id), "E3");
         _;
     }
     modifier isCampaignFunder(uint256 _id) {
@@ -102,14 +90,11 @@ contract StandardCampaign {
                 break;
             }
         }
-        require(isFunder, "Sender must be a funder of the campaign");
+        require(isFunder, "E5");
         _;
     }
     modifier isCampaignAcceptor(uint256 _id) {
-        require(
-            checkIsCampaignAcceptor(_id),
-            "Sender must be an acceptor of the campaign"
-        );
+        require(checkIsCampaignAcceptor(_id), "E4");
         _;
     }
     modifier isCampaignWorker(uint256 _id) {
@@ -120,7 +105,7 @@ contract StandardCampaign {
                 break;
             }
         }
-        require(isWorker, "Sender must be a worker of the campaign");
+        require(isWorker, "E6");
         _;
     }
     modifier isCampaignStakeholder(uint256 _id) {
@@ -135,7 +120,7 @@ contract StandardCampaign {
                 break;
             }
         }
-        require(isStakeholder, "Sender must be a stakeholder of the campaign");
+        require(isStakeholder, "E7");
         _;
     }
 
@@ -143,24 +128,18 @@ contract StandardCampaign {
     modifier isCampaignRunning(uint256 _id) {
         require(
             campaigns[_id].status == CampaignManager.CampaignStatus.Running,
-            "Campaign must be running"
+            "E8"
         );
         _;
     }
 
     // Campaign Money
     modifier isEffectiveBalanceMoreThanZero(uint256 _id) {
-        require(
-            getEffectiveCampaignBalance(_id) > 0,
-            "Effective balance must be greater than zero"
-        );
+        require(getEffectiveCampaignBalance(_id) > 0, "E9");
         _;
     }
     modifier isLockedBalanceMoreThanZero(uint256 _id) {
-        require(
-            getCampaignLockedRewards(_id) > 0,
-            "Locked balance must be greater than zero"
-        );
+        require(getCampaignLockedRewards(_id) > 0, "E10");
         _;
     }
 
@@ -168,66 +147,48 @@ contract StandardCampaign {
     modifier isProjectGate(uint256 _id) {
         require(
             projects[_id].status == ProjectManager.ProjectStatus.Gate,
-            "Project must be at gate"
+            "E11"
         );
         _;
     }
     modifier isProjectStage(uint256 _id) {
         require(
             projects[_id].status == ProjectManager.ProjectStatus.Stage,
-            "Project must be at stage"
+            "E12"
         );
         _;
     }
     modifier isProjectRunning(uint256 _id) {
         require(
             projects[_id].status != ProjectManager.ProjectStatus.Closed,
-            "Project must be running"
+            "E13"
         );
         _;
     }
 
     // Task Statuses
     modifier isTaskNotClosed(uint256 _id) {
-        require(!tasks[_id].closed, "Task must not be closed");
-        _;
-    }
-
-    // Lazy Project Status Updater
-    modifier lazyStatusUpdaterStart(uint256 _id) {
-        statusFixer(_id);
+        require(!tasks[_id].closed, "E14");
         _;
     }
 
     // Task Roles
     modifier isWorkerOnTask(uint256 _id) {
-        require(
-            msg.sender == tasks[_id].worker,
-            "Sender must be the task worker"
-        );
+        require(msg.sender == tasks[_id].worker, "E15");
         _;
     }
 
     // Stake & Funding
     modifier isMoneyIntended(uint256 _money) {
-        require(
-            msg.value == _money && _money > 0,
-            "Ether sent must be equal to intended funding"
-        );
+        require(msg.value == _money && _money > 0, "E16");
         _;
     }
     modifier isStakeAndFundingIntended(uint256 _stake, uint256 _funding) {
-        require(
-            msg.value == _stake + _funding,
-            "Ether sent must be equal to intended stake"
-        );
+        require(msg.value == _stake + _funding, "E17");
         _;
     }
     modifier isMoreThanEnrolStake(uint256 _stake) {
-        require(
-            _stake >= enrolStake,
-            "Intended stake must be greater or equal to enrolStake"
-        );
+        require(_stake >= enrolStake, "E18");
         _;
     }
 
@@ -275,10 +236,7 @@ contract StandardCampaign {
         address payable[] memory _owners,
         address payable[] memory _acceptors
     ) public isCampaignOwner(_id) {
-        require(
-            _owners.length > 0,
-            "Campaign must have at least one owner at all times"
-        );
+        require(_owners.length > 0, "E19");
 
         CampaignManager.Campaign storage campaign = campaigns[_id];
 
@@ -288,7 +246,7 @@ contract StandardCampaign {
                 require(
                     projects[campaign.allChildProjects[i]].status ==
                         ProjectManager.ProjectStatus.Closed,
-                    "Projects must be closed"
+                    "E20"
                 );
             }
         }
@@ -307,7 +265,8 @@ contract StandardCampaign {
     function fundCampaign(
         uint256 _id,
         uint256 _funding
-    ) public payable isCampaignExisting(_id) isMoneyIntended(_funding) {
+    ) public payable isMoneyIntended(_funding) {
+        checkCampaignExists(_id);
         CampaignManager.Campaign storage campaign = campaigns[_id];
         campaign.fundCampaign(_funding);
     }
@@ -315,7 +274,8 @@ contract StandardCampaign {
     // Refund all campaign fundings ✅
     function refundAllCampaignFundings(
         uint256 _id
-    ) public isCampaignExisting(_id) isCampaignOwner(_id) {
+    ) public isCampaignOwner(_id) {
+        checkCampaignExists(_id);
         CampaignManager.Campaign storage campaign = campaigns[_id];
         campaign.refundAllCampaignFundings();
     }
@@ -324,13 +284,15 @@ contract StandardCampaign {
     function refundOwnFunding(
         uint256 _id,
         uint256 _fundingID
-    ) public isCampaignExisting(_id) isCampaignFunder(_id) {
+    ) public isCampaignFunder(_id) {
+        checkCampaignExists(_id);
         CampaignManager.Campaign storage campaign = campaigns[_id];
         campaign.refundOwnFunding(_fundingID);
     }
 
     // Refund closed campaign stake ✅
     function refundStake(uint256 _id) public isCampaignCreator(_id) {
+        checkCampaignExists(_id);
         CampaignManager.Campaign storage campaign = campaigns[_id];
         campaign.refundStake();
     }
@@ -339,7 +301,8 @@ contract StandardCampaign {
     function fundLockAmount(
         uint256 _id,
         uint256 _expense
-    ) internal isCampaignExisting(_id) isEffectiveBalanceMoreThanZero(_id) {
+    ) internal isEffectiveBalanceMoreThanZero(_id) {
+        checkCampaignExists(_id);
         CampaignManager.Campaign storage campaign = campaigns[_id];
         campaign.fundings.fundLockAmount(_expense);
     }
@@ -348,7 +311,8 @@ contract StandardCampaign {
     function fundUnlockAmount(
         uint256 _id,
         uint256 _expense
-    ) internal isCampaignExisting(_id) isLockedBalanceMoreThanZero(_id) {
+    ) internal isLockedBalanceMoreThanZero(_id) {
+        checkCampaignExists(_id);
         CampaignManager.Campaign storage campaign = campaigns[_id];
         campaign.fundings.fundUnlockAmount(_expense);
     }
@@ -357,7 +321,8 @@ contract StandardCampaign {
     function fundUseAmount(
         uint256 _id,
         uint256 _expense
-    ) internal isCampaignExisting(_id) isLockedBalanceMoreThanZero(_id) {
+    ) internal isLockedBalanceMoreThanZero(_id) {
+        checkCampaignExists(_id);
         CampaignManager.Campaign storage campaign = campaigns[_id];
         campaign.fundings.fundUseAmount(_expense);
     }
@@ -380,19 +345,6 @@ contract StandardCampaign {
 
     /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// CAMPAIGN READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
-    // Get all campaigns ✅
-    function getAllCampaigns()
-        public
-        view
-        returns (CampaignManager.Campaign[] memory)
-    {
-        CampaignManager.Campaign[]
-            memory _campaigns = new CampaignManager.Campaign[](campaignCount);
-        for (uint256 i = 0; i < campaignCount; i++) {
-            _campaigns[i] = campaigns[i];
-        }
-        return _campaigns;
-    }
 
     // Get campaign by ID ✅
     function getCampaignByID(
@@ -412,50 +364,37 @@ contract StandardCampaign {
     // Get the total funding of a campaign ✅
     function getCampaignTotalFunding(
         uint256 _id
-    ) public view isCampaignExisting(_id) returns (uint256) {
+    ) public view returns (uint256) {
+        checkCampaignExists(_id);
         CampaignManager.Campaign memory campaign = campaigns[_id];
-        uint256 totalFunding = 0;
-        for (uint256 i = 0; i < campaign.fundings.length; i++) {
-            totalFunding += campaign.fundings[i].funding;
-        }
-        return totalFunding;
+        return campaign.getTotalFunding();
     }
 
     // Get the total unused balance of a campaign ✅
     function getCampaignUnusedBalance(
         uint256 _id
-    ) public view isCampaignExisting(_id) returns (uint256) {
+    ) public view returns (uint256) {
+        checkCampaignExists(_id);
         CampaignManager.Campaign memory campaign = campaigns[_id];
-        uint256 totalBalance = 0;
-        for (uint256 i = 0; i < campaign.fundings.length; i++) {
-            if (!campaign.fundings[i].fullyRefunded) {
-                uint256 balanceOfFundingStruct = campaign.fundings[i].funding -
-                    campaign.fundings[i].amountUsed;
-                totalBalance += balanceOfFundingStruct;
-            }
-        }
-        return totalBalance;
+        return campaign.getUnusedBalance();
     }
 
     // Get the total locked rewards of a campaign ✅
     function getCampaignLockedRewards(
         uint256 _id
-    ) public view isCampaignExisting(_id) returns (uint256) {
+    ) public view returns (uint256) {
+        checkCampaignExists(_id);
         CampaignManager.Campaign memory campaign = campaigns[_id];
-        uint256 totalLockedRewards = 0;
-        for (uint256 i = 0; i < campaign.fundings.length; i++) {
-            if (!campaign.fundings[i].fullyRefunded) {
-                totalLockedRewards += campaign.fundings[i].amountLocked;
-            }
-        }
-        return totalLockedRewards;
+        return campaign.getLockedRewards();
     }
 
     // Get the total EFFECTIVE balance (unused - locked) of a campaign ✅
     function getEffectiveCampaignBalance(
         uint256 _id
-    ) public view isCampaignExisting(_id) returns (uint256) {
-        return getCampaignUnusedBalance(_id) - getCampaignLockedRewards(_id);
+    ) public view returns (uint256) {
+        checkCampaignExists(_id);
+        CampaignManager.Campaign memory campaign = campaigns[_id];
+        return CampaignManager.getEffectiveBalance(campaign);
     }
 
     /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
@@ -463,20 +402,13 @@ contract StandardCampaign {
     // Create a new project ✅
     function makeProject(
         string memory _metadata,
-        uint256 _deadline,
+        // uint256 _deadline,
         bool _applicationRequired,
         uint256 _parentCampaign,
         uint256 _parentProject
-    )
-        public
-        isFutureTimestamp(_deadline)
-        isCampaignExisting(_parentCampaign)
-        returns (uint256)
-    {
-        require(
-            _parentProject <= projectCount + 1,
-            "Parent project must exist or be the next top-level project to be created"
-        );
+    ) public returns (uint256) {
+        checkCampaignExists(_parentCampaign);
+        require(_parentProject <= projectCount + 1, "E21");
         ProjectManager.Project storage project = projects[projectCount];
         CampaignManager.Campaign storage parentCampaign = campaigns[
             _parentCampaign
@@ -521,20 +453,15 @@ contract StandardCampaign {
         uint256 _id
     )
         public
-        isProjectExisting(_id)
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
         isCampaignOwner(projects[_id].parentCampaign)
     {
+        checkProjectExists(_id);
+
         ProjectManager.Project storage project = projects[_id];
-        require(
-            project.status == ProjectManager.ProjectStatus.Gate,
-            "Project must currently be at gate"
-        );
-        require(
-            checkIsCampaignOwner(project.parentCampaign),
-            "Sender must be an owner of the campaign"
-        );
+        require(project.status == ProjectManager.ProjectStatus.Gate, "E22");
+        require(checkIsCampaignOwner(project.parentCampaign), "E23");
 
         // Just to clear any loose ends
         goToSettledStatus(_id, 0, 1, 2);
@@ -553,27 +480,28 @@ contract StandardCampaign {
         uint256 _nextSettledStartTimestamp
     )
         public
-        isProjectExisting(_id)
         isCampaignRunning(projects[_id].parentCampaign)
-        lazyStatusUpdaterStart(_id)
         isProjectRunning(_id)
         isProjectGate(_id)
     {
+        checkProjectExists(_id);
+        // iscampaign running
+        statusFixer(_id);
+        // isproject running
+        //isgate
+
         ProjectManager.Project storage project = projects[_id];
 
         // Check conditions for going to settled
-        require(toSettledConditions(_id), "Project cannot go to settled");
+        require(toSettledConditions(_id), "E24");
         // Ensure sender is an owner of the campaign
-        require(
-            checkIsCampaignOwner(project.parentCampaign),
-            "Sender must be an owner of the campaign"
-        );
+        require(checkIsCampaignOwner(project.parentCampaign), "E25");
 
         // Ensure timestamps are in order
         require(
             _nextSettledStartTimestamp > _nextGateStartTimestamp &&
                 _nextGateStartTimestamp > _nextStageStartTimestamp,
-            "_nextGateStartTimestamp must be after _nextStageStartTimestamp"
+            "E26"
         );
 
         // Get NotClosed tasks
@@ -632,10 +560,10 @@ contract StandardCampaign {
         uint256 _id
     )
         internal
-        isProjectExisting(_id)
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
     {
+        checkProjectExists(_id);
         ProjectManager.Project storage project = projects[_id];
 
         // GOING INTO STAGE 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
@@ -721,10 +649,10 @@ contract StandardCampaign {
         uint256 _id
     )
         internal
-        isProjectExisting(_id)
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
     {
+        checkProjectExists(_id);
         ProjectManager.Project storage project = projects[_id];
         uint256 lateness = 0;
 
@@ -788,15 +716,13 @@ contract StandardCampaign {
     }
 
     // If sender is owner, acceptor or worker, append vote to fast forward status ✅
-    function voteFastForwardStatus(
-        uint256 _id,
-        bool _vote
-    ) public lazyStatusUpdaterStart(_id) {
+    function voteFastForwardStatus(uint256 _id, bool _vote) public {
+        statusFixer(_id);
         require(
             checkIsCampaignAcceptor(projects[_id].parentCampaign) ||
                 checkIsCampaignOwner(projects[_id].parentCampaign) ||
                 checkIsProjectWorker(_id),
-            "Sender must be an acceptor, worker or owner"
+            "E27"
         );
         ProjectManager.Project storage project = projects[_id];
 
@@ -816,9 +742,10 @@ contract StandardCampaign {
     }
 
     // Worker drop out of project ✅
-    function workerDropOut(
-        uint256 _id
-    ) public isProjectExisting(_id) lazyStatusUpdaterStart(_id) {
+    function workerDropOut(uint256 _id) public {
+        checkProjectExists(_id);
+        statusFixer(_id);
+
         ProjectManager.Project storage project = projects[_id];
         CampaignManager.Campaign storage campaign = campaigns[
             project.parentCampaign
@@ -828,7 +755,7 @@ contract StandardCampaign {
         require(
             project.status != ProjectManager.ProjectStatus.Stage &&
                 checkIsProjectWorker(_id),
-            "Project must currently be at gate or settled or closed"
+            "E28"
         );
 
         // Remove worker from project
@@ -850,28 +777,20 @@ contract StandardCampaign {
     function fireWorker(
         uint256 _id,
         address _worker
-    )
-        public
-        isProjectExisting(_id)
-        isCampaignOwner(projects[_id].parentCampaign)
-        lazyStatusUpdaterStart(_id)
-    {
+    ) public isCampaignOwner(projects[_id].parentCampaign) {
+        checkProjectExists(_id);
+        // isOwner?
+        statusFixer(_id);
         ProjectManager.Project storage project = projects[_id];
         CampaignManager.Campaign storage campaign = campaigns[
             project.parentCampaign
         ];
 
         // Ensure worker is on project
-        require(
-            checkIsProjectWorker(_id, _worker),
-            "Address must be a worker on the project"
-        );
+        require(checkIsProjectWorker(_id, _worker), "E29");
 
         // Ensure project status is not stage
-        require(
-            project.status != ProjectManager.ProjectStatus.Stage,
-            "Project must currently be at gate or settled or closed"
-        );
+        require(project.status != ProjectManager.ProjectStatus.Stage, "E30");
 
         // Remove worker from project
         Utilities.deleteItemInAddressArray(_worker, project.workers);
@@ -892,24 +811,15 @@ contract StandardCampaign {
     function refundWorkerEnrolStake(
         uint256 _id,
         address _worker
-    )
-        internal
-        isProjectExisting(_id)
-        isCampaignOwner(projects[_id].parentCampaign)
-    {
+    ) internal isCampaignOwner(projects[_id].parentCampaign) {
+        checkProjectExists(_id);
         ProjectManager.Project storage project = projects[_id];
 
         // Ensure worker is on project
-        require(
-            checkIsProjectWorker(_id, _worker),
-            "Address must be a worker on the project"
-        );
+        require(checkIsProjectWorker(_id, _worker), "E31");
 
         // Ensure project status is not stage
-        require(
-            project.status != ProjectManager.ProjectStatus.Stage,
-            "Project must currently be at gate or settled or closed"
-        );
+        require(project.status != ProjectManager.ProjectStatus.Stage, "E32");
 
         // Refund stake
         for (uint256 i = 0; i < project.applications.length; i++) {
@@ -940,29 +850,31 @@ contract StandardCampaign {
     )
         public
         payable
-        isProjectExisting(_id)
         isCampaignRunning(projects[_id].parentCampaign)
-        lazyStatusUpdaterStart(_id)
         isProjectRunning(_id)
         isMoneyIntended(_stake)
         isMoreThanEnrolStake(_stake)
     {
+        checkProjectExists(_id);
+        // iscampaignrunning
+        statusFixer(_id);
+        // isprojectrunning
+        // ismoneyintended
+        // ismorethanenrolstake
+
         ProjectManager.Project storage project = projects[_id];
         CampaignManager.Campaign storage campaign = campaigns[
             project.parentCampaign
         ];
 
-        require(!project.applicationRequired, "Project requires applications");
-        require(
-            !checkIsProjectWorker(_id),
-            "Sender must not already be a worker"
-        );
+        require(!project.applicationRequired, "E33");
+        require(!checkIsProjectWorker(_id), "E34");
 
         // Creates application to deal with stake
         ApplicationManager.Application storage application = applications[
             applicationCount
         ];
-        application.metadata = "No Application Required";
+        application.metadata = "_";
         application.applicant = msg.sender;
         application.accepted = true;
         application.enrolStake.funder = payable(msg.sender);
@@ -987,25 +899,20 @@ contract StandardCampaign {
     )
         public
         payable
-        isCampaignExisting(projects[_id].parentCampaign)
-        isProjectExisting(_id)
-        lazyStatusUpdaterStart(_id)
         isCampaignRunning(projects[_id].parentCampaign)
         isProjectRunning(_id)
         isMoneyIntended(_stake)
         isMoreThanEnrolStake(_stake)
         returns (uint256)
     {
-        ProjectManager.Project storage project = projects[_id];
-        require(
-            project.applicationRequired,
-            "Project does not require applications"
-        );
+        checkCampaignExists(projects[_id].parentCampaign);
+        checkProjectExists(_id);
+        statusFixer(_id);
 
-        require(
-            !checkIsProjectWorker(_id),
-            "Sender must not already be a worker"
-        );
+        ProjectManager.Project storage project = projects[_id];
+        require(project.applicationRequired, "E35");
+
+        require(!checkIsProjectWorker(_id), "E36");
 
         ApplicationManager.Application storage application = applications[
             applicationCount
@@ -1030,13 +937,15 @@ contract StandardCampaign {
         bool _accepted
     )
         public
-        isProjectExisting(applications[_applicationID].parentProject)
-        lazyStatusUpdaterStart(applications[_applicationID].parentProject)
         isCampaignAcceptor(
             projects[applications[_applicationID].parentProject].parentCampaign
         )
-        isApplicationExisting(_applicationID)
     {
+        checkProjectExists(applications[_applicationID].parentProject);
+        statusFixer(applications[_applicationID].parentProject);
+        // campaignacceptor
+        checkApplicationExists(_applicationID);
+
         ApplicationManager.Application storage application = applications[
             _applicationID
         ];
@@ -1079,7 +988,8 @@ contract StandardCampaign {
     // Compute rewards for all projects and tasks in a campaign ✅
     function computeAllRewardsInCampaign(
         uint256 _id
-    ) public isCampaignExisting(_id) isCampaignRunning(_id) {
+    ) public isCampaignRunning(_id) {
+        checkCampaignExists(projects[_id].parentCampaign);
         // Get the campaign
         CampaignManager.Campaign storage campaign = campaigns[_id];
 
@@ -1101,7 +1011,8 @@ contract StandardCampaign {
     function computeProjectRewards(
         uint256 _id,
         uint256 _fundsAtThatLevel
-    ) internal isProjectExisting(_id) {
+    ) internal {
+        checkProjectExists(_id);
         ProjectManager.Project storage project = projects[_id];
         uint256 thisProjectReward;
 
@@ -1186,16 +1097,13 @@ contract StandardCampaign {
     )
         public
         view
-        isProjectExisting(_id)
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
         returns (ProjectManager.ProjectStatus)
     {
+        checkProjectExists(_id);
         ProjectManager.Project storage project = projects[_id];
-        require(
-            project.status != ProjectManager.ProjectStatus.Closed,
-            "Project must be running"
-        );
+        require(project.status != ProjectManager.ProjectStatus.Closed, "E37");
         if (block.timestamp < project.nextMilestone.startStageTimestamp) {
             return ProjectManager.ProjectStatus.Settled;
         } else if (block.timestamp < project.nextMilestone.startGateTimestamp) {
@@ -1215,11 +1123,11 @@ contract StandardCampaign {
     )
         public
         view
-        isProjectExisting(_id)
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
+        checkProjectExists(_id);
         ProjectManager.Project storage project = projects[_id];
         TaskManager.Task[]
             memory notClosedTasks = getTasksOfProjectClosedFilter(
@@ -1256,11 +1164,11 @@ contract StandardCampaign {
     )
         public
         view
-        isProjectExisting(_id)
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
+        checkProjectExists(_id);
         ProjectManager.Project storage project = projects[_id];
         TaskManager.Task[]
             memory notClosedTasks = getTasksOfProjectClosedFilter(
@@ -1298,11 +1206,11 @@ contract StandardCampaign {
     )
         public
         view
-        isProjectExisting(_id)
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
+        checkProjectExists(_id);
         ProjectManager.Project storage project = projects[_id];
         bool currentStatusValid = project.status ==
             ProjectManager.ProjectStatus.Stage;
@@ -1318,11 +1226,11 @@ contract StandardCampaign {
     )
         public
         view
-        isProjectExisting(_id)
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
+        checkProjectExists(_id);
         ProjectManager.Project storage project = projects[_id];
         bool currentStatusValid = project.status ==
             ProjectManager.ProjectStatus.Stage;
@@ -1359,11 +1267,11 @@ contract StandardCampaign {
     )
         public
         view
-        isProjectExisting(_id)
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
+        checkProjectExists(_id);
         ProjectManager.Project storage project = projects[_id];
 
         bool currentStatusValid = project.status ==
@@ -1518,12 +1426,12 @@ contract StandardCampaign {
         uint256 _parentProjectID
     )
         public
-        isCampaignExisting(projects[_parentProjectID].parentCampaign)
-        isProjectExisting(_parentProjectID)
         isCampaignOwner(projects[_parentProjectID].parentCampaign)
         returns (uint256)
     {
-        require(_deadline > block.timestamp, "Deadline must be in the future");
+        checkProjectExists(_parentProjectID);
+        checkCampaignExists(projects[_parentProjectID].parentCampaign);
+        require(_deadline > block.timestamp, "E38");
 
         TaskManager.Task storage task = tasks[taskCount];
 
@@ -1548,16 +1456,17 @@ contract StandardCampaign {
         string memory _metadata
     )
         public
-        isTaskExisting(_id)
-        isProjectExisting(tasks[_id].parentProject)
-        lazyStatusUpdaterStart(tasks[_id].parentProject)
         isProjectRunning(tasks[_id].parentProject)
         isWorkerOnTask(_id)
         isTaskNotClosed(_id)
         isProjectStage(tasks[_id].parentProject)
     {
+        checkTaskExists(_id);
+        checkProjectExists(tasks[_id].parentProject);
+        statusFixer(tasks[_id].parentProject);
+
         TaskManager.Task storage task = tasks[_id];
-        require(task.deadline > block.timestamp, "Task deadline has passed");
+        require(task.deadline > block.timestamp, "E39");
 
         // Create submission, if it already exists, overwrite it
         TaskManager.Submission storage submission = task.submission;
@@ -1573,14 +1482,15 @@ contract StandardCampaign {
         bool _accepted
     )
         public
-        isTaskExisting(_id)
-        isProjectExisting(tasks[_id].parentProject)
-        lazyStatusUpdaterStart(tasks[_id].parentProject)
         isProjectRunning(tasks[_id].parentProject)
         isCampaignAcceptor(projects[tasks[_id].parentProject].parentCampaign)
         isTaskNotClosed(_id)
         isProjectGate(tasks[_id].parentProject)
     {
+        checkTaskExists(_id);
+        checkProjectExists(tasks[_id].parentProject);
+        statusFixer(tasks[_id].parentProject);
+
         ProjectManager.Project storage project = projects[
             tasks[_id].parentProject
         ];
@@ -1592,11 +1502,11 @@ contract StandardCampaign {
             block.timestamp <
                 project.nextMilestone.startGateTimestamp +
                     taskSubmissionDecisionTime,
-            "Decision must happen during decision window"
+            "E40"
         );
         require(
             submission.status == TaskManager.SubmissionStatus.Pending,
-            "Submission must not already have decision"
+            "E41"
         );
 
         // If decision is accepted, set submission status to accepted,
@@ -1677,22 +1587,18 @@ contract StandardCampaign {
     }
 
     // Assign a worker to a task ✅
-    function workerSelfAssignsTask(
-        uint256 _id
-    )
-        public
-        isTaskExisting(_id)
-        isProjectExisting(tasks[_id].parentProject)
-        lazyStatusUpdaterStart(tasks[_id].parentProject)
-        isTaskNotClosed(_id)
-    {
+    function workerSelfAssignsTask(uint256 _id) public isTaskNotClosed(_id) {
+        checkTaskExists(_id);
+        checkProjectExists(tasks[_id].parentProject);
+        statusFixer(tasks[_id].parentProject);
+
         TaskManager.Task storage task = tasks[_id];
         ProjectManager.Project storage project = projects[task.parentProject];
 
         require(
             project.status == ProjectManager.ProjectStatus.Settled &&
                 checkIsProjectWorker(_id),
-            "Project must be settled"
+            "E42"
         );
 
         // If stake by sender is strictly superior than stake of current worker on task
@@ -1725,27 +1631,28 @@ contract StandardCampaign {
         string memory _metadata
     )
         public
-        isTaskExisting(_id)
-        isProjectExisting(tasks[_id].parentProject)
-        lazyStatusUpdaterStart(tasks[_id].parentProject)
         isProjectRunning(tasks[_id].parentProject)
         isWorkerOnTask(_id)
         isTaskNotClosed(_id)
         isProjectGate(tasks[_id].parentProject)
     {
+        checkTaskExists(_id);
+        checkProjectExists(tasks[_id].parentProject);
+        statusFixer(tasks[_id].parentProject);
+
         TaskManager.Task storage task = tasks[_id];
         ProjectManager.Project storage project = projects[task.parentProject];
         TaskManager.Submission storage submission = task.submission;
 
         require(
             submission.status == TaskManager.SubmissionStatus.Declined,
-            "Submission must be declined"
+            "E43"
         );
         require(
             block.timestamp <
                 project.nextMilestone.startGateTimestamp +
                     taskSubmissionDecisionDisputeTime,
-            "Dispute must happen during dispute window"
+            "E44"
         );
 
         submission.status = TaskManager.SubmissionStatus.Disputed;
@@ -1880,10 +1787,7 @@ contract StandardCampaign {
     }
 
     function contractMasterDrain() public {
-        require(
-            msg.sender == contractMaster,
-            "Only the contract master can drain the contract"
-        );
+        require(msg.sender == contractMaster, "E45");
         payable(msg.sender).transfer(address(this).balance);
     }
 

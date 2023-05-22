@@ -42,9 +42,9 @@ library ProjectManager {
     }
 
     enum ProjectStatus {
+        Closed,
         Stage,
         Gate,
-        Settled,
-        Closed
+        Settled
     }
 }

@@ -30,6 +30,7 @@ library CampaignManager {
         uint256[] directChildProjects;
         uint256[] allChildProjects;
     }
+
     // enum CampaignStyle {
     //     Private,
     //     PrivateThenOpen,
@@ -37,10 +38,11 @@ library CampaignManager {
     // }
 
     enum CampaignStatus {
-        Running,
-        Closed
+        Closed,
+        Running
     }
 
+    // Write Functions
     // Campaign Creation Function ✅
     function makeCampaign(
         Campaign storage _campaign,
@@ -163,5 +165,63 @@ library CampaignManager {
             _campaign.stake.fullyRefunded = true;
             _campaign.creator.transfer(_campaign.stake.funding);
         }
+    }
+
+    // Read Functions
+    // Library function for calculating total funding ✅
+    function getTotalFunding(
+        Campaign memory _campaign
+    ) external pure returns (uint256) {
+        uint256 _totalFunding = 0;
+        for (uint256 i = 0; i < _campaign.fundings.length; i++) {
+            _totalFunding += _campaign.fundings[i].funding;
+        }
+        return _totalFunding;
+    }
+
+    // Library function for calculating unused balance ✅
+    function getUnusedBalance(
+        Campaign memory _campaign
+    ) external pure returns (uint256) {
+        uint256 _totalBalance = 0;
+        for (uint256 i = 0; i < _campaign.fundings.length; i++) {
+            if (!_campaign.fundings[i].fullyRefunded) {
+                uint256 balanceOfFundingStruct = _campaign.fundings[i].funding -
+                    _campaign.fundings[i].amountUsed;
+                _totalBalance += balanceOfFundingStruct;
+            }
+        }
+        return _totalBalance;
+    }
+
+    // Library function for calculating locked rewards ✅
+    function getLockedRewards(
+        Campaign memory _campaign
+    ) external pure returns (uint256) {
+        uint256 _totalLockedRewards = 0;
+        for (uint256 i = 0; i < _campaign.fundings.length; i++) {
+            if (!_campaign.fundings[i].fullyRefunded) {
+                _totalLockedRewards += _campaign.fundings[i].amountLocked;
+            }
+        }
+        return _totalLockedRewards;
+    }
+
+    // Library function for calculating effective balance ✅
+    function getEffectiveBalance(
+        Campaign memory _campaign
+    ) external pure returns (uint256) {
+        uint256 _effectiveBalance = 0;
+
+        for (uint256 i = 0; i < _campaign.fundings.length; i++) {
+            if (!_campaign.fundings[i].fullyRefunded) {
+                _effectiveBalance +=
+                    _campaign.fundings[i].funding -
+                    _campaign.fundings[i].amountLocked -
+                    _campaign.fundings[i].amountUsed;
+            }
+        }
+
+        return _effectiveBalance;
     }
 }
