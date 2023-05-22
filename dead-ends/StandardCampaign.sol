@@ -70,18 +70,6 @@ contract StandardCampaign {
         require(_id < campaignCount, "Campaign does not exist");
         _;
     }
-    modifier isProjectExisting(uint256 _id) {
-        require(_id < projectCount, "Project does not exist");
-        _;
-    }
-    modifier isTaskExisting(uint256 _id) {
-        require(_id < taskCount, "Task does not exist");
-        _;
-    }
-    modifier isApplicationExisting(uint256 _id) {
-        require(_id < applicationCount, "Application does not exist");
-        _;
-    }
 
     // Campaign Roles
     modifier isCampaignCreator(uint256 _id) {
@@ -168,50 +156,6 @@ contract StandardCampaign {
         _;
     }
 
-    // Project Statuses
-    modifier isProjectGate(uint256 _id) {
-        require(
-            projects[_id].status == ProjectStatus.Gate,
-            "Project must be at gate"
-        );
-        _;
-    }
-    modifier isProjectStage(uint256 _id) {
-        require(
-            projects[_id].status == ProjectStatus.Stage,
-            "Project must be at stage"
-        );
-        _;
-    }
-    modifier isProjectRunning(uint256 _id) {
-        require(
-            projects[_id].status != ProjectStatus.Closed,
-            "Project must be running"
-        );
-        _;
-    }
-
-    // Task Statuses
-    modifier isTaskNotClosed(uint256 _id) {
-        require(!tasks[_id].closed, "Task must not be closed");
-        _;
-    }
-
-    // Lazy Project Status Updater
-    modifier lazyStatusUpdaterStart(uint256 _id) {
-        statusFixer(_id);
-        _;
-    }
-
-    // Task Roles
-    modifier isWorkerOnTask(uint256 _id) {
-        require(
-            msg.sender == tasks[_id].worker,
-            "Sender must be the task worker"
-        );
-        _;
-    }
-
     // Stake & Funding
     modifier isMoneyIntended(uint256 _money) {
         require(
@@ -224,13 +168,6 @@ contract StandardCampaign {
         require(
             msg.value == _stake + _funding,
             "Ether sent must be equal to intended stake"
-        );
-        _;
-    }
-    modifier isMoreThanEnrolStake(uint256 _stake) {
-        require(
-            _stake >= enrolStake,
-            "Intended stake must be greater or equal to enrolStake"
         );
         _;
     }
@@ -330,7 +267,7 @@ contract StandardCampaign {
         }
     }
 
-    // Refund own funding ✅
+    // Refund own funder funding ✅
     function refundOwnFunding(
         uint256 _id,
         uint256 _fundingID
@@ -391,13 +328,13 @@ contract StandardCampaign {
 
         Campaign storage campaign = campaigns[_id];
 
-        campaign.title = _title; //✅
-        campaign.metadata = _metadata; //✅
+        campaign.title = _title; //
+        campaign.metadata = _metadata; //
         //campaign.style = _style; //❌ (needs all private-to-open effects for transition)
         //campaign.deadline = _deadline; //⚠️ (can't be less than maximum settled time of current stage of contained projects)
         campaign.status = _status; //⚠️ (can't be closed if there are open projects)
-        campaign.owners = _owners; //✅
-        campaign.acceptors = _acceptors; //✅
+        campaign.owners = _owners; //
+        campaign.acceptors = _acceptors; //
     }
 
     // Lock amounts of funds by going through each funding and locking until the expense is covered ✅
@@ -433,7 +370,7 @@ contract StandardCampaign {
         campaign.fundings.fundUseAmount(_expense);
     }
 
-    // Cleanup all tasks that are not closed at the right time for all projects ✅
+    // Cleanup all tasks that are not closed at the right time for all projects ⚠️
     function cleanUpNotClosedTasksForAllProjects(uint256 _id) internal {
         Campaign storage campaign = campaigns[_id];
         for (uint256 i = 0; i < campaign.allChildProjects.length; i++) {
@@ -441,7 +378,7 @@ contract StandardCampaign {
         }
     }
 
-    // Unlock the funds for all projects that can have their funds unlocked ✅
+    // Unlock the funds for all projects that can have their funds unlocked ⚠️
     function unlockTheFundsForAllProjectsPostCleanup(uint256 _id) internal {
         Campaign storage campaign = campaigns[_id];
         for (uint256 i = 0; i < campaign.allChildProjects.length; i++) {
@@ -449,7 +386,7 @@ contract StandardCampaign {
         }
     }
 
-    // Compute rewards for all projects and tasks in a campaign ✅
+    // Compute rewards for all projects and tasks in a campaign ⚠️
     function computeAllRewardsInCampaign(
         uint256 _id
     ) public isCampaignExisting(_id) isCampaignRunning(_id) {
@@ -472,7 +409,7 @@ contract StandardCampaign {
 
     /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// CAMPAIGN READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
-    // Get all campaigns ✅
+    // Get all campaigns
     function getAllCampaigns() public view returns (Campaign[] memory) {
         Campaign[] memory _campaigns = new Campaign[](campaignCount);
         for (uint256 i = 0; i < campaignCount; i++) {
@@ -481,21 +418,21 @@ contract StandardCampaign {
         return _campaigns;
     }
 
-    // Get campaign by ID ✅
+    // Get campaign by ID
     function getCampaignByID(
         uint256 _id
     ) public view returns (Campaign memory) {
         return campaigns[_id];
     }
 
-    // Get campaign Fundings struct array ✅
+    // Get campaign Fundings struct array
     function getFundingsOfCampaign(
         uint256 _id
     ) public view returns (Fundings[] memory) {
         return campaigns[_id].fundings;
     }
 
-    // Get the total funding of a campaign ✅
+    // Get the total funding of a campaign
     function getCampaignTotalFunding(
         uint256 _id
     ) public view isCampaignExisting(_id) returns (uint256) {
@@ -507,7 +444,7 @@ contract StandardCampaign {
         return totalFunding;
     }
 
-    // Get the total unused balance of a campaign ✅
+    // Get the total unused balance of a campaign
     function getCampaignUnusedBalance(
         uint256 _id
     ) public view isCampaignExisting(_id) returns (uint256) {
@@ -523,7 +460,7 @@ contract StandardCampaign {
         return totalBalance;
     }
 
-    // Get the total locked rewards of a campaign ✅
+    // Get the total locked rewards of a campaign
     function getCampaignLockedRewards(
         uint256 _id
     ) public view isCampaignExisting(_id) returns (uint256) {
@@ -537,14 +474,14 @@ contract StandardCampaign {
         return totalLockedRewards;
     }
 
-    // Get the total EFFECTIVE balance (unused - locked) of a campaign ✅
+    // Get the total EFFECTIVE balance (unused - locked) of a campaign
     function getEffectiveCampaignBalance(
         uint256 _id
     ) public view isCampaignExisting(_id) returns (uint256) {
         return getCampaignUnusedBalance(_id) - getCampaignLockedRewards(_id);
     }
 
-    // Check if sender is owner of campaign ✅
+    // Check if sender is owner of campaign
     function checkIsCampaignOwner(uint256 _id) public view returns (bool) {
         bool isOwner = false;
         for (uint256 i = 0; i < campaigns[_id].owners.length; i++) {
@@ -556,7 +493,7 @@ contract StandardCampaign {
         return isOwner;
     }
 
-    // Overloading: Check if address is owner of campaign ✅
+    // Overloading: Check if address is owner of campaign
     function checkIsCampaignOwner(
         uint256 _id,
         address _address
@@ -571,7 +508,7 @@ contract StandardCampaign {
         return isOwner;
     }
 
-    // Check if sender is acceptor of campaign ✅
+    // Check if sender is acceptor of campaign
     function checkIsCampaignAcceptor(uint256 _id) public view returns (bool) {
         bool isAcceptor = false;
         for (uint256 i = 0; i < campaigns[_id].acceptors.length; i++) {
@@ -583,7 +520,7 @@ contract StandardCampaign {
         return isAcceptor;
     }
 
-    // Overloading: Check if address is acceptor of campaign ✅
+    // Overloading: Check if address is acceptor of campaign
     function checkIsCampaignAcceptor(
         uint256 _id,
         address _address
@@ -596,120 +533,6 @@ contract StandardCampaign {
             }
         }
         return isAcceptor;
-    }
-
-    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
-    /// TASK READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
-
-    // How many tasks match filter? helper function for getTasksOfProjectClosedFilter() below✅
-    function countTasksWithFilter(
-        uint256 _id,
-        TaskStatusFilter _statusFilter
-    ) internal view returns (uint256) {
-        uint256 taskCounter = 0;
-        uint256[] memory childTasks = projects[_id].childTasks;
-        for (uint256 i = 0; i < childTasks.length; i++) {
-            if (
-                _statusFilter == TaskStatusFilter.Closed &&
-                tasks[childTasks[i]].closed
-            ) {
-                taskCounter++;
-            } else if (
-                _statusFilter == TaskStatusFilter.NotClosed &&
-                !tasks[childTasks[i]].closed
-            ) {
-                taskCounter++;
-            } else if (_statusFilter == TaskStatusFilter.All) {
-                taskCounter++;
-            }
-        }
-        return taskCounter;
-    }
-
-    // Get tasks in a project based on Closed/NotClosed filter✅
-    function getTasksOfProjectClosedFilter(
-        uint256 _id,
-        TaskStatusFilter _statusFilter
-    ) public view returns (Task[] memory) {
-        Project memory parentProject = projects[_id];
-        if (_statusFilter == TaskStatusFilter.NotClosed) {
-            // Get uncompleted tasks
-            Task[] memory _tasks = new Task[](
-                countTasksWithFilter(_id, _statusFilter)
-            );
-            uint256 j = 0;
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                if (!tasks[parentProject.childTasks[i]].closed) {
-                    _tasks[j] = tasks[parentProject.childTasks[i]];
-                    j++;
-                }
-            }
-            return _tasks;
-        } else if (_statusFilter == TaskStatusFilter.Closed) {
-            // Get completed tasks
-            Task[] memory _tasks = new Task[](
-                countTasksWithFilter(_id, _statusFilter)
-            );
-            uint256 j = 0;
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                if (tasks[parentProject.childTasks[i]].closed) {
-                    _tasks[j] = tasks[parentProject.childTasks[i]];
-                    j++;
-                }
-            }
-            return _tasks;
-        } else {
-            // Get all tasks
-            Task[] memory _tasks = new Task[](parentProject.childTasks.length);
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                _tasks[i] = tasks[parentProject.childTasks[i]];
-            }
-            return _tasks;
-        }
-    }
-
-    // Get task IDs in a project based on Closed/NotClosed filter✅
-    function getTaskIdsOfProjectClosedFilter(
-        uint256 _id,
-        TaskStatusFilter _statusFilter
-    ) public view returns (uint256[] memory) {
-        Project memory parentProject = projects[_id];
-        if (_statusFilter == TaskStatusFilter.NotClosed) {
-            // Get uncompleted tasks
-            uint256[] memory _tasks = new uint256[](
-                countTasksWithFilter(_id, _statusFilter)
-            );
-            uint256 j = 0;
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                if (!tasks[parentProject.childTasks[i]].closed) {
-                    _tasks[j] = parentProject.childTasks[i];
-                    j++;
-                }
-            }
-            return _tasks;
-        } else if (_statusFilter == TaskStatusFilter.Closed) {
-            // Get completed tasks
-            uint256[] memory _tasks = new uint256[](
-                countTasksWithFilter(_id, _statusFilter)
-            );
-            uint256 j = 0;
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                if (tasks[parentProject.childTasks[i]].closed) {
-                    _tasks[j] = parentProject.childTasks[i];
-                    j++;
-                }
-            }
-            return _tasks;
-        } else {
-            // Get all tasks
-            uint256[] memory _tasks = new uint256[](
-                parentProject.childTasks.length
-            );
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                _tasks[i] = parentProject.childTasks[i];
-            }
-            return _tasks;
-        }
     }
 
     /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️

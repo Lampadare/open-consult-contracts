@@ -2,15 +2,15 @@
 
 pragma solidity ^0.8.9;
 
-struct Fundings {
-    address payable funder; // The address of the individual who contributed
-    uint256 funding; // The amount of tokens the user contributed
-    uint256 amountUsed; // The amount of tokens that have been paid out
-    uint256 amountLocked; // The amount of tokens that have been locked
-    bool fullyRefunded; // A boolean storing whether or not the contribution has been fully refunded or fully used
-}
-
 library FundingsManager {
+    struct Fundings {
+        address payable funder; // The address of the individual who contributed
+        uint256 funding; // The amount of tokens the user contributed
+        uint256 amountUsed; // The amount of tokens that have been paid out
+        uint256 amountLocked; // The amount of tokens that have been locked
+        bool fullyRefunded; // A boolean storing whether or not the contribution has been fully refunded or fully used
+    }
+
     using FundingsManager for Fundings[];
 
     function fundLockAmount(
