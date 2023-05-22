@@ -81,4 +81,17 @@ library CampaignManager {
             _campaign.fundings.push(newFunding);
         }
     }
+
+    // Campaign Funding Function ✅
+    function fundCampaign(
+        Campaign storage _campaign,
+        uint256 _funding
+    ) external {
+        FundingsManager.Fundings memory newFunding;
+        newFunding.funder = payable(msg.sender);
+        newFunding.funding = _funding;
+        _campaign.stake.amountUsed = 0;
+        newFunding.fullyRefunded = false;
+        _campaign.fundings.push(newFunding);
+    }
 }

@@ -271,15 +271,9 @@ contract StandardCampaign {
     function fundCampaign(
         uint256 _id,
         uint256 _funding
-    ) public payable isMoneyIntended(_funding) {
-        Fundings memory newFunding;
-        newFunding.funder = payable(msg.sender);
-        newFunding.funding = _funding;
-        newFunding.amountUsed = 0;
-        newFunding.fullyRefunded = false;
-
+    ) public payable isCampaignExisting(_id) isMoneyIntended(_funding) {
         Campaign storage campaign = campaigns[_id];
-        campaign.fundings.push(newFunding);
+        CampaignManager.fundCampaign(campaign, _funding);
     }
 
     // Refund all campaign fundings ✅
