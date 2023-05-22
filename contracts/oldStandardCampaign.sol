@@ -22,6 +22,10 @@ contract StandardCampaign {
     using TaskManager for TaskManager.Task;
     using ApplicationManager for ApplicationManager.Application;
 
+    /// DEVELOPER FUNCTIONS (ONLY FOR TESTING) 🧑‍💻🧑‍💻🧑‍💻🧑‍💻🧑‍💻
+    address public contractMaster;
+    event Dispute(uint256 _id, string _metadata);
+
     // Mapping of campaign IDs to campaigns, IDs are numbers starting from 0
     mapping(uint256 => CampaignManager.Campaign) public campaigns;
     uint256 public campaignCount = 0;
@@ -196,24 +200,21 @@ contract StandardCampaign {
         public
         payable
         isStakeAndFundingIntended(_stake, _funding)
-        returns (uint256 id)
+        returns (uint256)
     {
-        if (_stake >= minStake) {
-            CampaignManager.Campaign storage campaign = campaigns[
-                campaignCount
-            ];
-            campaign.makeCampaign(
-                _metadata,
-                // _style,
-                _owners,
-                _acceptors,
-                _stake,
-                _funding
-            );
+        require(_stake >= minStake, "E46");
+        CampaignManager.Campaign storage campaign = campaigns[campaignCount];
+        campaign.makeCampaign(
+            _metadata,
+            // _style,
+            _owners,
+            _acceptors,
+            _stake,
+            _funding
+        );
 
-            campaignCount++;
-            return campaignCount - 1;
-        }
+        campaignCount++;
+        return campaignCount - 1;
     }
 
     // Update Campaign ⚠️
@@ -370,13 +371,13 @@ contract StandardCampaign {
 
         // If this is a top level project, set the parent project to itself
         if (_topLevel) {
-            project.parentProject = projectCount;
+            projects[projectCount].parentProject = projectCount;
             // In the PARENTS of THIS project being created, add THIS project to the child projects
             // If this is a top level project, add it in the parent campaign direct child projects
             parentCampaign.directChildProjects.push(projectCount);
             parentCampaign.allChildProjects.push(projectCount);
         } else {
-            project.parentProject = _parentProjectId;
+            projects[projectCount].parentProject = _parentProjectId;
             // In the PARENTS of THIS project being created, add THIS project to the child projects
             // If this is not the top level project, add it to the parent project all child projects
             // Reference project in campaign
@@ -532,13 +533,13 @@ contract StandardCampaign {
         // GOING INTO GATE 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
         else if (project.status == ProjectManager.ProjectStatus.Stage) {
             (bool toGate, bool toGateFastForward) = toGateConditions(_id);
-            if (toGateFastForwardConditions(_id)) {
+            if (toGateFastForward) {
                 // update project status
                 project.status = ProjectManager.ProjectStatus.Gate;
                 // delete all votes
                 delete project.fastForward;
                 return;
-            } else if (toGateConditions(_id)) {
+            } else if (toGate) {
                 // update project status
                 project.status = ProjectManager.ProjectStatus.Gate;
                 // delete all votes
@@ -555,7 +556,7 @@ contract StandardCampaign {
         // If we are where we should be and votes allow to fast forward, try to fast forward
         // Otherwise, do nothing
         if (
-            project.whatStatusProjectShouldBeAt() == project.status &&
+            projects[_id].whatStatusProjectShouldBeAt() == project.status &&
             checkFastForwardStatus(_id)
         ) {
             updateProjectStatus(_id);
@@ -567,7 +568,7 @@ contract StandardCampaign {
         // If we should be in settled but are in gate, then return
         // moving to settled needs owner input so we'll just wait here
         if (
-            project.whatStatusProjectShouldBeAt() ==
+            projects[_id].whatStatusProjectShouldBeAt() ==
             ProjectManager.ProjectStatus.Settled &&
             project.status == ProjectManager.ProjectStatus.Gate
         ) {
@@ -577,7 +578,9 @@ contract StandardCampaign {
             return;
         } else {
             // Iterate until we get to where we should be
-            while (project.whatStatusProjectShouldBeAt() != project.status) {
+            while (
+                projects[_id].whatStatusProjectShouldBeAt() != project.status
+            ) {
                 updateProjectStatus(_id);
             }
             cleanUpNotClosedTasksForAllProjects(project.parentCampaign);
@@ -1031,9 +1034,7 @@ contract StandardCampaign {
     /// PROJECT READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
 
     // Conditions for going to Stage ✅
-    function toStageConditions(
-        uint256 _id
-    ) public view returns (bool toStage, bool toStageFastForward) {
+    function toStageConditions(uint256 _id) public view returns (bool, bool) {
         ProjectManager.Project storage project = projects[_id];
         TaskManager.Task[]
             memory notClosedTasks = getTasksOfProjectClosedFilter(
@@ -1075,15 +1076,7 @@ contract StandardCampaign {
     }
 
     // Conditions for going to Gate ✅
-    function toGateConditions(
-        uint256 _id
-    )
-        public
-        view
-        isProjectRunning(_id)
-        isCampaignRunning(projects[_id].parentCampaign)
-        returns (bool)
-    {
+    function toGateConditions(uint256 _id) public view returns (bool, bool) {
         checkProjectExists(_id);
         ProjectManager.Project storage project = projects[_id];
         bool currentStatusValid = project.status ==
@@ -1091,23 +1084,7 @@ contract StandardCampaign {
         bool inGatePeriod = block.timestamp >=
             project.nextMilestone.startGateTimestamp;
 
-        return currentStatusValid && inGatePeriod;
-    }
-
-    // Conditions for fast forwarding to Gate ✅
-    function toGateFastForwardConditions(
-        uint256 _id
-    )
-        public
-        view
-        isProjectRunning(_id)
-        isCampaignRunning(projects[_id].parentCampaign)
-        returns (bool)
-    {
-        checkProjectExists(_id);
-        ProjectManager.Project storage project = projects[_id];
-        bool currentStatusValid = project.status ==
-            ProjectManager.ProjectStatus.Stage;
+        // For fast forward
         bool stillInStagePeriod = block.timestamp <
             project.nextMilestone.startGateTimestamp;
         bool allTasksHaveSubmissions = true;
@@ -1124,15 +1101,16 @@ contract StandardCampaign {
                 TaskManager.SubmissionStatus.None
             ) {
                 allTasksHaveSubmissions = false;
-                return false;
             }
         }
 
-        return
+        return (
+            currentStatusValid && inGatePeriod,
             currentStatusValid &&
-            stillInStagePeriod &&
-            allTasksHaveSubmissions &&
-            checkFastForwardStatus(_id);
+                stillInStagePeriod &&
+                allTasksHaveSubmissions &&
+                checkFastForwardStatus(_id)
+        );
     }
 
     // Conditions for going to Settled ✅
@@ -1654,8 +1632,6 @@ contract StandardCampaign {
 
     /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
     /// DEVELOPER FUNCTIONS (ONLY FOR TESTING) 🧑‍💻🧑‍💻🧑‍💻🧑‍💻🧑‍💻
-    address public contractMaster;
-
     constructor() payable {
         contractMaster = payable(msg.sender);
     }
@@ -1671,8 +1647,6 @@ contract StandardCampaign {
     ) public isCampaignStakeholder(_id) {
         emit Dispute(_id, _metadata);
     }
-
-    event Dispute(uint256 _id, string _metadata);
 
     receive() external payable {}
 

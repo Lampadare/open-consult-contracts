@@ -224,4 +224,54 @@ library CampaignManager {
 
         return _effectiveBalance;
     }
+
+    // Checking if sender is campaign owner ✅
+    function checkIsCampaignOwner(
+        Campaign memory _campaign
+    ) external view returns (bool) {
+        for (uint256 i = 0; i < _campaign.owners.length; i++) {
+            if (msg.sender == _campaign.owners[i]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Checking if address is campaign owner ✅
+    function checkIsCampaignOwner(
+        Campaign memory _campaign,
+        address _address
+    ) external pure returns (bool) {
+        for (uint256 i = 0; i < _campaign.owners.length; i++) {
+            if (_campaign.owners[i] == _address) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Checking if sender is campaign acceptor ✅
+    function checkIsCampaignAcceptor(
+        Campaign memory _campaign
+    ) external view returns (bool) {
+        for (uint256 i = 0; i < _campaign.acceptors.length; i++) {
+            if (msg.sender == _campaign.acceptors[i]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Checking if address is campaign acceptor ✅
+    function checkIsCampaignAcceptor(
+        Campaign memory _campaign,
+        address _address
+    ) external pure returns (bool) {
+        for (uint256 i = 0; i < _campaign.acceptors.length; i++) {
+            if (_campaign.acceptors[i] == _address) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

@@ -132,3 +132,9 @@ E44 =
 
 E45 =
 "Only the contract master can drain the contract"
+
+E46 =
+"Campaign creation stake must be greater than minStake"
+
+- pass objects so you can mutate stuff better, don't use \_ids
+- toSettled is big fruit
