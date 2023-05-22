@@ -13,3 +13,8 @@
 - remove status from project update
 
 - just remove from funding instead of adding to amountused
+
+- CHECKERFUNCTIONS:
+  - ensure it exists
+  - lazyupdater
+  - other checks
