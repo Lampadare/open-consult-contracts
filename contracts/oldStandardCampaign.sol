@@ -445,17 +445,14 @@ contract StandardCampaign {
             "E26"
         );
 
-        // Get NotClosed tasks
-        uint256[] memory notClosedTaskIds = getTaskIdsOfProjectClosedFilter(
-            _id,
-            TaskManager.TaskStatusFilter.NotClosed
-        );
-
         // Get latest task deadline
         uint256 latestTaskDeadline = 0;
-        for (uint256 i = 0; i < notClosedTaskIds.length; i++) {
-            if (tasks[notClosedTaskIds[i]].deadline > latestTaskDeadline) {
-                latestTaskDeadline = tasks[notClosedTaskIds[i]].deadline;
+        for (uint256 i = 0; i < project.childTasks.length; i++) {
+            if (
+                tasks[project.childTasks[i]].deadline > latestTaskDeadline &&
+                !tasks[project.childTasks[i]].closed
+            ) {
+                latestTaskDeadline = tasks[project.childTasks[i]].deadline;
             }
         }
 
@@ -471,15 +468,13 @@ contract StandardCampaign {
         // If task deadline is before timestamp of stage start and uncompleted
         // then update deadline of task to be max of stage start and latest task deadline
         // At this point, all deadlines should be between stage start and gate start
-        for (uint256 i = 0; i < notClosedTaskIds.length; i++) {
+        for (uint256 i = 0; i < project.childTasks.length; i++) {
+            TaskManager.Task storage task = tasks[project.childTasks[i]];
             // Clear workers of unclosed tasks when going settled
-            tasks[notClosedTaskIds[i]].worker = payable(address(0));
+            task.worker = payable(address(0));
             // If task deadline is before timestamp of stage start and uncompleted
-            if (
-                tasks[notClosedTaskIds[i]].deadline <
-                project.nextMilestone.startStageTimestamp
-            ) {
-                tasks[notClosedTaskIds[i]].deadline = Utilities.max(
+            if (task.deadline < project.nextMilestone.startStageTimestamp) {
+                task.deadline = Utilities.max(
                     latestTaskDeadline,
                     project.nextMilestone.startGateTimestamp - 1 seconds
                 );
@@ -608,15 +603,12 @@ contract StandardCampaign {
                 project.nextMilestone.startStageTimestamp;
         }
 
-        // Get NotClosed task IDs
-        uint256[] memory notClosedTaskIds = getTaskIdsOfProjectClosedFilter(
-            _id,
-            TaskManager.TaskStatusFilter.NotClosed
-        );
-
         // Add lateness to all tasks
-        for (uint256 i = 0; i < notClosedTaskIds.length; i++) {
-            tasks[notClosedTaskIds[i]].deadline += lateness; // add lateness to deadline
+        for (uint256 i = 0; i < project.childTasks.length; i++) {
+            TaskManager.Task storage task = tasks[project.childTasks[i]];
+            if (!task.closed) {
+                task.deadline += lateness; // add lateness to deadline
+            }
         }
 
         // add lateness to nextmilestone
@@ -978,21 +970,16 @@ contract StandardCampaign {
             }
         }
 
-        uint256[] memory notClosedTaskIds = getTaskIdsOfProjectClosedFilter(
-            _id,
-            TaskManager.TaskStatusFilter.NotClosed
-        );
-
         // Updating tasks requires reward conditions to be met
         if (updateProjectRewardsConditions(_id)) {
-            // Compute the reward for each task at this level)
-            for (uint256 i = 0; i < notClosedTaskIds.length; i++) {
+            for (uint256 i = 0; i < project.childTasks[i]; i++) {
+                TaskManager.Task storage task = tasks[project.childTasks[i]];
+                // Compute the reward for each task at this level)
                 // Compute the reward based on the task's weight and the total weight
-                uint256 taskReward = (thisProjectReward *
-                    tasks[notClosedTaskIds[i]].weight) / 1000;
+                uint256 taskReward = (thisProjectReward * task.weight) / 1000;
 
                 // Update the task reward in storage
-                tasks[notClosedTaskIds[i]].reward = taskReward;
+                task.reward = taskReward;
             }
         }
 
@@ -1036,11 +1023,6 @@ contract StandardCampaign {
     // Conditions for going to Stage ✅
     function toStageConditions(uint256 _id) public view returns (bool, bool) {
         ProjectManager.Project storage project = projects[_id];
-        TaskManager.Task[]
-            memory notClosedTasks = getTasksOfProjectClosedFilter(
-                _id,
-                TaskManager.TaskStatusFilter.NotClosed
-            );
 
         bool currentStatusValid = project.status ==
             ProjectManager.ProjectStatus.Settled;
@@ -1054,8 +1036,8 @@ contract StandardCampaign {
             project.nextMilestone.startStageTimestamp;
 
         // Ensure all tasks have workers
-        for (uint256 i = 0; i < notClosedTasks.length; i++) {
-            if (notClosedTasks[i].worker == address(0)) {
+        for (uint256 i = 0; i < project.childTasks.length; i++) {
+            if (tasks[project.childTasks[i]].worker == address(0)) {
                 allTasksHaveWorkers = false;
                 return (false, false);
             }
@@ -1089,15 +1071,9 @@ contract StandardCampaign {
             project.nextMilestone.startGateTimestamp;
         bool allTasksHaveSubmissions = true;
 
-        // Ensure all NotClosed tasks have submissions
-        TaskManager.Task[]
-            memory notClosedTasks = getTasksOfProjectClosedFilter(
-                _id,
-                TaskManager.TaskStatusFilter.NotClosed
-            );
-        for (uint256 i = 0; i < notClosedTasks.length; i++) {
+        for (uint256 i = 0; i < project.childTasks.length; i++) {
             if (
-                notClosedTasks[i].submission.status ==
+                tasks[project.childTasks[i]].submission.status ==
                 TaskManager.SubmissionStatus.None
             ) {
                 allTasksHaveSubmissions = false;
@@ -1379,46 +1355,18 @@ contract StandardCampaign {
     // and weren't disputed within the dispute time
     function cleanUpNotClosedTasks(uint256 _id) internal {
         ProjectManager.Project storage project = projects[_id];
-        // Campaign storage campaign = campaigns[project.parentCampaign];
+        CampaignManager.Campaign storage campaign = campaigns[
+            project.parentCampaign
+        ];
 
-        // Past the decision time for submissions anyone can trigger the cleanup
-        if (
-            block.timestamp <=
-            project.nextMilestone.startGateTimestamp +
-                taskSubmissionDecisionTime
-        ) {
-            return;
-        }
-
-        // Get NotClosed tasks
-        uint256[] memory notClosedTaskIds = getTaskIdsOfProjectClosedFilter(
-            _id,
-            TaskManager.TaskStatusFilter.NotClosed
-        );
-
-        for (uint256 i = 0; i < notClosedTaskIds.length; i++) {
-            TaskManager.Task storage task = tasks[notClosedTaskIds[i]];
-            if (
-                task.submission.status == TaskManager.SubmissionStatus.Pending
-            ) {
-                task.submission.status = TaskManager.SubmissionStatus.Accepted;
-                task.closed = true;
-                task.paid = true;
-                task.worker.transfer(task.reward);
-                //campaign.lockedRewards -= task.reward;
-            }
-
-            if (
-                task.submission.status ==
-                TaskManager.SubmissionStatus.Declined &&
-                block.timestamp >=
-                project.nextMilestone.startGateTimestamp +
-                    taskSubmissionDecisionDisputeTime
-            ) {
-                task.closed = true;
-                task.paid = false;
-                //campaign.lockedRewards -= task.reward;
-            }
+        for (uint256 i = 0; i < project.childTasks.length; i++) {
+            TaskManager.Task storage task = tasks[project.childTasks[i]];
+            task.cleanupNotClosedTasks(
+                campaign,
+                project.nextMilestone.startGateTimestamp,
+                taskSubmissionDecisionTime,
+                taskSubmissionDecisionDisputeTime
+            );
         }
     }
 
@@ -1512,122 +1460,6 @@ contract StandardCampaign {
         task.paid = false;
 
         dispute(_id, _metadata);
-    }
-
-    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
-    /// TASK READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
-
-    // How many tasks match filter? helper function for getTasksOfProjectClosedFilter() below✅
-    function countTasksWithFilter(
-        uint256 _id,
-        TaskManager.TaskStatusFilter _statusFilter
-    ) internal view returns (uint256) {
-        uint256 taskCounter = 0;
-        uint256[] memory childTasks = projects[_id].childTasks;
-        for (uint256 i = 0; i < childTasks.length; i++) {
-            if (
-                _statusFilter == TaskManager.TaskStatusFilter.Closed &&
-                tasks[childTasks[i]].closed
-            ) {
-                taskCounter++;
-            } else if (
-                _statusFilter == TaskManager.TaskStatusFilter.NotClosed &&
-                !tasks[childTasks[i]].closed
-            ) {
-                taskCounter++;
-            } else if (_statusFilter == TaskManager.TaskStatusFilter.All) {
-                taskCounter++;
-            }
-        }
-        return taskCounter;
-    }
-
-    // Get tasks in a project based on Closed/NotClosed filter✅
-    function getTasksOfProjectClosedFilter(
-        uint256 _id,
-        TaskManager.TaskStatusFilter _statusFilter
-    ) public view returns (TaskManager.Task[] memory) {
-        ProjectManager.Project memory parentProject = projects[_id];
-        if (_statusFilter == TaskManager.TaskStatusFilter.NotClosed) {
-            // Get uncompleted tasks
-            TaskManager.Task[] memory _tasks = new TaskManager.Task[](
-                countTasksWithFilter(_id, _statusFilter)
-            );
-            uint256 j = 0;
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                if (!tasks[parentProject.childTasks[i]].closed) {
-                    _tasks[j] = tasks[parentProject.childTasks[i]];
-                    j++;
-                }
-            }
-            return _tasks;
-        } else if (_statusFilter == TaskManager.TaskStatusFilter.Closed) {
-            // Get completed tasks
-            TaskManager.Task[] memory _tasks = new TaskManager.Task[](
-                countTasksWithFilter(_id, _statusFilter)
-            );
-            uint256 j = 0;
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                if (tasks[parentProject.childTasks[i]].closed) {
-                    _tasks[j] = tasks[parentProject.childTasks[i]];
-                    j++;
-                }
-            }
-            return _tasks;
-        } else {
-            // Get all tasks
-            TaskManager.Task[] memory _tasks = new TaskManager.Task[](
-                parentProject.childTasks.length
-            );
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                _tasks[i] = tasks[parentProject.childTasks[i]];
-            }
-            return _tasks;
-        }
-    }
-
-    // Get task IDs in a project based on Closed/NotClosed filter✅
-    function getTaskIdsOfProjectClosedFilter(
-        uint256 _id,
-        TaskManager.TaskStatusFilter _statusFilter
-    ) public view returns (uint256[] memory) {
-        ProjectManager.Project memory parentProject = projects[_id];
-        if (_statusFilter == TaskManager.TaskStatusFilter.NotClosed) {
-            // Get uncompleted tasks
-            uint256[] memory _tasks = new uint256[](
-                countTasksWithFilter(_id, _statusFilter)
-            );
-            uint256 j = 0;
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                if (!tasks[parentProject.childTasks[i]].closed) {
-                    _tasks[j] = parentProject.childTasks[i];
-                    j++;
-                }
-            }
-            return _tasks;
-        } else if (_statusFilter == TaskManager.TaskStatusFilter.Closed) {
-            // Get completed tasks
-            uint256[] memory _tasks = new uint256[](
-                countTasksWithFilter(_id, _statusFilter)
-            );
-            uint256 j = 0;
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                if (tasks[parentProject.childTasks[i]].closed) {
-                    _tasks[j] = parentProject.childTasks[i];
-                    j++;
-                }
-            }
-            return _tasks;
-        } else {
-            // Get all tasks
-            uint256[] memory _tasks = new uint256[](
-                parentProject.childTasks.length
-            );
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                _tasks[i] = parentProject.childTasks[i];
-            }
-            return _tasks;
-        }
     }
 
     /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️

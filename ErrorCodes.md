@@ -136,5 +136,8 @@ E45 =
 E46 =
 "Campaign creation stake must be greater than minStake"
 
+E47 =
+"Cleanup can only happen after the (startGateTimestamp + taskSubmissionDecisionTime)"
+
 - pass objects so you can mutate stuff better, don't use \_ids
 - toSettled is big fruit
