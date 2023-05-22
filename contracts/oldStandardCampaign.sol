@@ -133,16 +133,6 @@ contract StandardCampaign {
         _;
     }
 
-    // Campaign Money
-    modifier isEffectiveBalanceMoreThanZero(uint256 _id) {
-        require(getEffectiveCampaignBalance(_id) > 0, "E9");
-        _;
-    }
-    modifier isLockedBalanceMoreThanZero(uint256 _id) {
-        require(getCampaignLockedRewards(_id) > 0, "E10");
-        _;
-    }
-
     // Project Statuses
     modifier isProjectGate(uint256 _id) {
         require(
@@ -298,30 +288,21 @@ contract StandardCampaign {
     }
 
     // Lock amounts of funds by going through each funding and locking until the expense is covered ✅
-    function fundLockAmount(
-        uint256 _id,
-        uint256 _expense
-    ) internal isEffectiveBalanceMoreThanZero(_id) {
+    function fundLockAmount(uint256 _id, uint256 _expense) internal {
         checkCampaignExists(_id);
         CampaignManager.Campaign storage campaign = campaigns[_id];
         campaign.fundings.fundLockAmount(_expense);
     }
 
     // Unlock amounts of funds by going through each funding and unlocking until the expense is covered ✅
-    function fundUnlockAmount(
-        uint256 _id,
-        uint256 _expense
-    ) internal isLockedBalanceMoreThanZero(_id) {
+    function fundUnlockAmount(uint256 _id, uint256 _expense) internal {
         checkCampaignExists(_id);
         CampaignManager.Campaign storage campaign = campaigns[_id];
         campaign.fundings.fundUnlockAmount(_expense);
     }
 
     // Use amounts of funds by going through each funding and using until the expense is covered ✅
-    function fundUseAmount(
-        uint256 _id,
-        uint256 _expense
-    ) internal isLockedBalanceMoreThanZero(_id) {
+    function fundUseAmount(uint256 _id, uint256 _expense) internal {
         checkCampaignExists(_id);
         CampaignManager.Campaign storage campaign = campaigns[_id];
         campaign.fundings.fundUseAmount(_expense);
@@ -361,42 +342,6 @@ contract StandardCampaign {
         return campaigns[_id].fundings;
     }
 
-    // Get the total funding of a campaign ✅
-    function getCampaignTotalFunding(
-        uint256 _id
-    ) public view returns (uint256) {
-        checkCampaignExists(_id);
-        CampaignManager.Campaign memory campaign = campaigns[_id];
-        return campaign.getTotalFunding();
-    }
-
-    // Get the total unused balance of a campaign ✅
-    function getCampaignUnusedBalance(
-        uint256 _id
-    ) public view returns (uint256) {
-        checkCampaignExists(_id);
-        CampaignManager.Campaign memory campaign = campaigns[_id];
-        return campaign.getUnusedBalance();
-    }
-
-    // Get the total locked rewards of a campaign ✅
-    function getCampaignLockedRewards(
-        uint256 _id
-    ) public view returns (uint256) {
-        checkCampaignExists(_id);
-        CampaignManager.Campaign memory campaign = campaigns[_id];
-        return campaign.getLockedRewards();
-    }
-
-    // Get the total EFFECTIVE balance (unused - locked) of a campaign ✅
-    function getEffectiveCampaignBalance(
-        uint256 _id
-    ) public view returns (uint256) {
-        checkCampaignExists(_id);
-        CampaignManager.Campaign memory campaign = campaigns[_id];
-        return CampaignManager.getEffectiveBalance(campaign);
-    }
-
     /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
     /// PROJECT WRITE FUNCTIONS 🔻🔻🔻🔻🔻🔻🔻🔻🔻🔻
     // Create a new project ✅
@@ -404,45 +349,39 @@ contract StandardCampaign {
         string memory _metadata,
         // uint256 _deadline,
         bool _applicationRequired,
-        uint256 _parentCampaign,
-        uint256 _parentProject
+        uint256 _parentCampaignId,
+        uint256 _parentProjectId,
+        bool _topLevel
     ) public returns (uint256) {
-        checkCampaignExists(_parentCampaign);
-        require(_parentProject <= projectCount + 1, "E21");
+        checkCampaignExists(_parentCampaignId);
+        require(_parentProjectId <= projectCount + 1, "E21");
+
         ProjectManager.Project storage project = projects[projectCount];
         CampaignManager.Campaign storage parentCampaign = campaigns[
-            _parentCampaign
+            _parentCampaignId
         ];
 
-        // Populate project
-        project.metadata = _metadata;
-        project.creationTime = block.timestamp;
-        project.status = ProjectManager.ProjectStatus.Gate;
-        project.nextMilestone = ProjectManager.NextMilestone(0, 0, 0);
-        project.applicationRequired = _applicationRequired;
+        project.makeProject(
+            _metadata,
+            // _deadline,
+            _applicationRequired,
+            _parentCampaignId
+        );
 
-        // // Open campaigns don't require applications
-        // if (parentCampaign.style == CampaignManager.CampaignStyle.Open) {
-        //     project.applicationRequired = false;
-        // } else {
-        //     project.applicationRequired = _applicationRequired;
-        // }
-
-        // In THIS project being created, set the parent campaign and project
-        project.parentCampaign = _parentCampaign;
-        project.parentProject = _parentProject; // !!! references itself if at the top level
-
-        // In the PARENTS of THIS project being created, add THIS project to the child projects
-        if (_parentProject < projectCount) {
-            // If this is not the top level project, add it to the parent project
-            projects[_parentProject].childProjects.push(projectCount);
-        } else {
-            // If this is a top level project, add it in the parent campaign
+        // If this is a top level project, set the parent project to itself
+        if (_topLevel) {
+            project.parentProject = projectCount;
+            // In the PARENTS of THIS project being created, add THIS project to the child projects
+            // If this is a top level project, add it in the parent campaign direct child projects
             parentCampaign.directChildProjects.push(projectCount);
+            parentCampaign.allChildProjects.push(projectCount);
+        } else {
+            project.parentProject = _parentProjectId;
+            // In the PARENTS of THIS project being created, add THIS project to the child projects
+            // If this is not the top level project, add it to the parent project all child projects
+            // Reference project in campaign
+            parentCampaign.allChildProjects.push(projectCount);
         }
-
-        // Reference project in campaign
-        campaigns[_parentCampaign].allChildProjects.push(projectCount);
 
         projectCount++;
         return projectCount - 1;
@@ -460,6 +399,7 @@ contract StandardCampaign {
         checkProjectExists(_id);
 
         ProjectManager.Project storage project = projects[_id];
+
         require(project.status == ProjectManager.ProjectStatus.Gate, "E22");
         require(checkIsCampaignOwner(project.parentCampaign), "E23");
 
@@ -568,7 +508,8 @@ contract StandardCampaign {
 
         // GOING INTO STAGE 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
         if (project.status == ProjectManager.ProjectStatus.Settled) {
-            if (toStageFastForwardConditions(_id)) {
+            (bool toStage, bool toStageFastForward) = toStageConditions(_id);
+            if (toStageFastForward) {
                 // update project status
                 project.status = ProjectManager.ProjectStatus.Stage;
                 // delete all votes
@@ -576,7 +517,7 @@ contract StandardCampaign {
 
                 // LOCK FUNDS HERE ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
                 return;
-            } else if (toStageConditions(_id)) {
+            } else if (toStage) {
                 // adjust lateness
                 adjustLatenessBeforeStage(_id);
                 // update project status
@@ -590,6 +531,7 @@ contract StandardCampaign {
         }
         // GOING INTO GATE 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
         else if (project.status == ProjectManager.ProjectStatus.Stage) {
+            (bool toGate, bool toGateFastForward) = toGateConditions(_id);
             if (toGateFastForwardConditions(_id)) {
                 // update project status
                 project.status = ProjectManager.ProjectStatus.Gate;
@@ -609,13 +551,13 @@ contract StandardCampaign {
     // Figure out where we are and where we should be and fix is needed ✅
     function statusFixer(uint256 _id) public {
         ProjectManager.Project storage project = projects[_id];
-        ProjectManager.ProjectStatus shouldBeStatus = whatStatusProjectShouldBeAt(
-                _id
-            );
 
         // If we are where we should be and votes allow to fast forward, try to fast forward
         // Otherwise, do nothing
-        if (shouldBeStatus == project.status && checkFastForwardStatus(_id)) {
+        if (
+            project.whatStatusProjectShouldBeAt() == project.status &&
+            checkFastForwardStatus(_id)
+        ) {
             updateProjectStatus(_id);
             cleanUpNotClosedTasksForAllProjects(project.parentCampaign);
             unlockTheFundsForAllProjectsPostCleanup(project.parentCampaign);
@@ -625,7 +567,8 @@ contract StandardCampaign {
         // If we should be in settled but are in gate, then return
         // moving to settled needs owner input so we'll just wait here
         if (
-            shouldBeStatus == ProjectManager.ProjectStatus.Settled &&
+            project.whatStatusProjectShouldBeAt() ==
+            ProjectManager.ProjectStatus.Settled &&
             project.status == ProjectManager.ProjectStatus.Gate
         ) {
             cleanUpNotClosedTasksForAllProjects(project.parentCampaign);
@@ -634,9 +577,8 @@ contract StandardCampaign {
             return;
         } else {
             // Iterate until we get to where we should be
-            while (shouldBeStatus != project.status) {
+            while (project.whatStatusProjectShouldBeAt() != project.status) {
                 updateProjectStatus(_id);
-                shouldBeStatus = whatStatusProjectShouldBeAt(_id);
             }
             cleanUpNotClosedTasksForAllProjects(project.parentCampaign);
             unlockTheFundsForAllProjectsPostCleanup(project.parentCampaign);
@@ -995,15 +937,12 @@ contract StandardCampaign {
 
         // unlock the funds of the project -> inside check we're past decision time and dispute time
 
-        // Effective campaign balance that rewards can draw from at that time
-        uint256 effectiveCampaignBalance = getEffectiveCampaignBalance(_id);
-
         // Loop over all direct projects in the campaign
         for (uint256 i = 0; i < campaign.directChildProjects.length; i++) {
             uint256 projectId = campaign.directChildProjects[i];
 
             // Compute rewards for the project and its tasks recursively
-            computeProjectRewards(projectId, effectiveCampaignBalance);
+            computeProjectRewards(projectId, campaign.getEffectiveBalance());
         }
     }
 
@@ -1091,43 +1030,10 @@ contract StandardCampaign {
     /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// PROJECT READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
 
-    // Returns the status corresponding to our current timestamp ✅
-    function whatStatusProjectShouldBeAt(
-        uint256 _id
-    )
-        public
-        view
-        isProjectRunning(_id)
-        isCampaignRunning(projects[_id].parentCampaign)
-        returns (ProjectManager.ProjectStatus)
-    {
-        checkProjectExists(_id);
-        ProjectManager.Project storage project = projects[_id];
-        require(project.status != ProjectManager.ProjectStatus.Closed, "E37");
-        if (block.timestamp < project.nextMilestone.startStageTimestamp) {
-            return ProjectManager.ProjectStatus.Settled;
-        } else if (block.timestamp < project.nextMilestone.startGateTimestamp) {
-            return ProjectManager.ProjectStatus.Stage;
-        } else if (
-            block.timestamp < project.nextMilestone.startSettledTimestamp
-        ) {
-            return ProjectManager.ProjectStatus.Gate;
-        } else {
-            return ProjectManager.ProjectStatus.Settled;
-        }
-    }
-
     // Conditions for going to Stage ✅
     function toStageConditions(
         uint256 _id
-    )
-        public
-        view
-        isProjectRunning(_id)
-        isCampaignRunning(projects[_id].parentCampaign)
-        returns (bool)
-    {
-        checkProjectExists(_id);
+    ) public view returns (bool toStage, bool toStageFastForward) {
         ProjectManager.Project storage project = projects[_id];
         TaskManager.Task[]
             memory notClosedTasks = getTasksOfProjectClosedFilter(
@@ -1142,44 +1048,7 @@ contract StandardCampaign {
         bool inStagePeriod = block.timestamp >=
             project.nextMilestone.startStageTimestamp;
 
-        // Ensure all tasks have workers
-        for (uint256 i = 0; i < notClosedTasks.length; i++) {
-            if (notClosedTasks[i].worker == address(0)) {
-                allTasksHaveWorkers = false;
-                return false;
-            }
-        }
-
-        // All conditions must be true to go to stage
-        return
-            allTasksHaveWorkers &&
-            currentStatusValid &&
-            projectHasWorkers &&
-            inStagePeriod;
-    }
-
-    // Conditions for fast forwarding to Stage ✅
-    function toStageFastForwardConditions(
-        uint256 _id
-    )
-        public
-        view
-        isProjectRunning(_id)
-        isCampaignRunning(projects[_id].parentCampaign)
-        returns (bool)
-    {
-        checkProjectExists(_id);
-        ProjectManager.Project storage project = projects[_id];
-        TaskManager.Task[]
-            memory notClosedTasks = getTasksOfProjectClosedFilter(
-                _id,
-                TaskManager.TaskStatusFilter.NotClosed
-            );
-
-        bool currentStatusValid = project.status ==
-            ProjectManager.ProjectStatus.Settled;
-        bool projectHasWorkers = project.workers.length > 0;
-        bool allTasksHaveWorkers = true;
+        // For fast forward
         bool stillInSettledPeriod = block.timestamp <
             project.nextMilestone.startStageTimestamp;
 
@@ -1187,17 +1056,22 @@ contract StandardCampaign {
         for (uint256 i = 0; i < notClosedTasks.length; i++) {
             if (notClosedTasks[i].worker == address(0)) {
                 allTasksHaveWorkers = false;
-                return false;
+                return (false, false);
             }
         }
 
         // All conditions must be true to go to stage
-        return
+        return (
             allTasksHaveWorkers &&
-            currentStatusValid &&
-            projectHasWorkers &&
-            stillInSettledPeriod &&
-            checkFastForwardStatus(_id);
+                currentStatusValid &&
+                projectHasWorkers &&
+                inStagePeriod,
+            allTasksHaveWorkers &&
+                currentStatusValid &&
+                projectHasWorkers &&
+                stillInSettledPeriod &&
+                checkFastForwardStatus(_id)
+        );
     }
 
     // Conditions for going to Gate ✅
