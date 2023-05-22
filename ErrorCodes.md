@@ -139,5 +139,8 @@ E46 =
 E47 =
 "Cleanup can only happen after the (startGateTimestamp + taskSubmissionDecisionTime)"
 
+E48 =
+"Can only unlock the funds after the (startGateTimestamp + taskSubmissionDecisionTime) after the cleanup"
+
 - pass objects so you can mutate stuff better, don't use \_ids
 - toSettled is big fruit

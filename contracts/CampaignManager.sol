@@ -3,6 +3,7 @@
 pragma solidity ^0.8.9;
 
 import "./FundingsManager.sol";
+import "./ProjectManager.sol";
 
 library CampaignManager {
     using FundingsManager for FundingsManager.Fundings;
@@ -273,5 +274,21 @@ library CampaignManager {
             }
         }
         return false;
+    }
+
+    // Unlock campaign funds equivalent to project reward ✅
+    function unlockProjectRewardPostCleanup(
+        Campaign storage _campaign,
+        ProjectManager.Project memory _project,
+        uint256 _taskSubmissionDecisionDisputeTime
+    ) external {
+        require(
+            block.timestamp >=
+                _project.nextMilestone.startGateTimestamp +
+                    _taskSubmissionDecisionDisputeTime
+        );
+
+        // Unlock the funds for the project
+        FundingsManager.fundUnlockAmount(_campaign.fundings, _project.reward);
     }
 }

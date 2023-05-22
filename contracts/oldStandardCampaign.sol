@@ -240,6 +240,7 @@ contract StandardCampaign {
                     "E20"
                 );
             }
+            campaign.refundStake();
         }
 
         campaign.updateCampaign(
@@ -281,27 +282,6 @@ contract StandardCampaign {
         campaign.refundOwnFunding(_fundingID);
     }
 
-    // Refund closed campaign stake ✅
-    function refundStake(uint256 _id) public isCampaignCreator(_id) {
-        checkCampaignExists(_id);
-        CampaignManager.Campaign storage campaign = campaigns[_id];
-        campaign.refundStake();
-    }
-
-    // Lock amounts of funds by going through each funding and locking until the expense is covered ✅
-    function fundLockAmount(uint256 _id, uint256 _expense) internal {
-        checkCampaignExists(_id);
-        CampaignManager.Campaign storage campaign = campaigns[_id];
-        campaign.fundings.fundLockAmount(_expense);
-    }
-
-    // Unlock amounts of funds by going through each funding and unlocking until the expense is covered ✅
-    function fundUnlockAmount(uint256 _id, uint256 _expense) internal {
-        checkCampaignExists(_id);
-        CampaignManager.Campaign storage campaign = campaigns[_id];
-        campaign.fundings.fundUnlockAmount(_expense);
-    }
-
     // Use amounts of funds by going through each funding and using until the expense is covered ✅
     function fundUseAmount(uint256 _id, uint256 _expense) internal {
         checkCampaignExists(_id);
@@ -325,6 +305,29 @@ contract StandardCampaign {
         }
     }
 
+    function unlockTheFundsForProjectPostCleanup(uint256 _id) internal {
+        ProjectManager.Project storage project = projects[_id];
+
+        // We must be past the decision time and dispute time
+        if (
+            block.timestamp <=
+            project.nextMilestone.startGateTimestamp +
+                taskSubmissionDecisionDisputeTime
+        ) {
+            return;
+        }
+
+        // Unlock the funds for the project
+        fundUnlockAmount(project.parentCampaign, project.reward);
+    }
+
+    // Unlock amounts of funds by going through each funding and unlocking until the expense is covered ✅
+    function fundUnlockAmount(uint256 _id, uint256 _expense) internal {
+        checkCampaignExists(_id);
+        CampaignManager.Campaign storage campaign = campaigns[_id];
+        campaign.fundings.fundUnlockAmount(_expense);
+    }
+
     /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// CAMPAIGN READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
 
@@ -334,13 +337,6 @@ contract StandardCampaign {
     ) public view returns (CampaignManager.Campaign memory) {
         CampaignManager.Campaign memory campaign = campaigns[_id];
         return campaign;
-    }
-
-    // Get campaign Fundings struct array ✅
-    function getFundingsOfCampaign(
-        uint256 _id
-    ) public view returns (FundingsManager.Fundings[] memory) {
-        return campaigns[_id].fundings;
     }
 
     /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
@@ -431,6 +427,9 @@ contract StandardCampaign {
         // isproject running
         //isgate
 
+        CampaignManager.Campaign storage parentCampaign = campaigns[
+            projects[_id].parentCampaign
+        ];
         ProjectManager.Project storage project = projects[_id];
 
         // Check conditions for going to settled
@@ -482,7 +481,7 @@ contract StandardCampaign {
         }
 
         // Lock funds for the project
-        fundLockAmount(project.parentCampaign, project.reward);
+        parentCampaign.fundings.fundLockAmount(project.reward);
 
         // Update project status
         project.status = ProjectManager.ProjectStatus.Settled;
@@ -1368,22 +1367,6 @@ contract StandardCampaign {
                 taskSubmissionDecisionDisputeTime
             );
         }
-    }
-
-    function unlockTheFundsForProjectPostCleanup(uint256 _id) internal {
-        ProjectManager.Project storage project = projects[_id];
-
-        // We must be past the decision time and dispute time
-        if (
-            block.timestamp <=
-            project.nextMilestone.startGateTimestamp +
-                taskSubmissionDecisionDisputeTime
-        ) {
-            return;
-        }
-
-        // Unlock the funds for the project
-        fundUnlockAmount(project.parentCampaign, project.reward);
     }
 
     // Assign a worker to a task ✅
