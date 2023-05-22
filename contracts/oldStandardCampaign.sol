@@ -142,7 +142,7 @@ contract StandardCampaign {
     // Campaign Statuses
     modifier isCampaignRunning(uint256 _id) {
         require(
-            campaigns[_id].status == CampaignStatus.Running,
+            campaigns[_id].status == CampaignManager.CampaignStatus.Running,
             "Campaign must be running"
         );
         _;
@@ -167,21 +167,21 @@ contract StandardCampaign {
     // Project Statuses
     modifier isProjectGate(uint256 _id) {
         require(
-            projects[_id].status == ProjectStatus.Gate,
+            projects[_id].status == ProjectManager.ProjectStatus.Gate,
             "Project must be at gate"
         );
         _;
     }
     modifier isProjectStage(uint256 _id) {
         require(
-            projects[_id].status == ProjectStatus.Stage,
+            projects[_id].status == ProjectManager.ProjectStatus.Stage,
             "Project must be at stage"
         );
         _;
     }
     modifier isProjectRunning(uint256 _id) {
         require(
-            projects[_id].status != ProjectStatus.Closed,
+            projects[_id].status != ProjectManager.ProjectStatus.Closed,
             "Project must be running"
         );
         _;
@@ -236,7 +236,7 @@ contract StandardCampaign {
     // Create a new campaign, optionally fund it ✅
     function makeCampaign(
         string memory _metadata,
-        CampaignManager.CampaignStyle _style,
+        // CampaignManager.CampaignStyle _style,
         address payable[] memory _owners,
         address payable[] memory _acceptors,
         uint256 _stake,
@@ -251,11 +251,9 @@ contract StandardCampaign {
             CampaignManager.Campaign storage campaign = campaigns[
                 campaignCount
             ];
-
-            CampaignManager.makeCampaign(
-                campaign,
+            campaign.makeCampaign(
                 _metadata,
-                _style,
+                // _style,
                 _owners,
                 _acceptors,
                 _stake,
@@ -267,36 +265,59 @@ contract StandardCampaign {
         }
     }
 
+    // Update Campaign ⚠️
+    function updateCampaign(
+        uint256 _id,
+        string memory _metadata,
+        // CampaignStyle _style,
+        //uint256 _deadline,
+        CampaignManager.CampaignStatus _status,
+        address payable[] memory _owners,
+        address payable[] memory _acceptors
+    ) public isCampaignOwner(_id) {
+        require(
+            _owners.length > 0,
+            "Campaign must have at least one owner at all times"
+        );
+
+        CampaignManager.Campaign storage campaign = campaigns[_id];
+
+        if (_status == CampaignManager.CampaignStatus.Closed) {
+            // require that all projects inside are closed
+            for (uint256 i = 0; i < campaign.allChildProjects.length; i++) {
+                require(
+                    projects[campaign.allChildProjects[i]].status ==
+                        ProjectManager.ProjectStatus.Closed,
+                    "Projects must be closed"
+                );
+            }
+        }
+
+        campaign.updateCampaign(
+            _metadata,
+            // _style,
+            //_deadline,
+            _status,
+            _owners,
+            _acceptors
+        );
+    }
+
     // Donate to a campaign ✅
     function fundCampaign(
         uint256 _id,
         uint256 _funding
     ) public payable isCampaignExisting(_id) isMoneyIntended(_funding) {
-        Campaign storage campaign = campaigns[_id];
-        CampaignManager.fundCampaign(campaign, _funding);
+        CampaignManager.Campaign storage campaign = campaigns[_id];
+        campaign.fundCampaign(_funding);
     }
 
     // Refund all campaign fundings ✅
     function refundAllCampaignFundings(
-        uint256 _id,
-        bool _drainCampaign
+        uint256 _id
     ) public isCampaignExisting(_id) isCampaignOwner(_id) {
-        require(_drainCampaign == true, "Just double checking.");
-
-        Campaign storage campaign = campaigns[_id];
-
-        for (uint256 i = 0; i < campaign.fundings.length; i++) {
-            Fundings storage funding = campaign.fundings[i];
-
-            if (!funding.fullyRefunded) {
-                uint256 availableFundsForRefund = funding.funding -
-                    funding.amountUsed -
-                    funding.amountLocked;
-                funding.amountUsed += availableFundsForRefund;
-                funding.fullyRefunded = (funding.amountUsed == funding.funding);
-                payable(msg.sender).transfer(availableFundsForRefund);
-            }
-        }
+        CampaignManager.Campaign storage campaign = campaigns[_id];
+        campaign.refundAllCampaignFundings();
     }
 
     // Refund own funding ✅
@@ -304,69 +325,14 @@ contract StandardCampaign {
         uint256 _id,
         uint256 _fundingID
     ) public isCampaignExisting(_id) isCampaignFunder(_id) {
-        Campaign storage campaign = campaigns[_id];
-        Fundings storage funding = campaign.fundings[_fundingID];
-
-        require(funding.funder == msg.sender, "Sender must be the funder");
-        require(!funding.fullyRefunded, "Funding must not be fully refunded");
-
-        uint256 availableFundsForRefund = funding.funding -
-            funding.amountUsed -
-            funding.amountLocked;
-        funding.amountUsed += availableFundsForRefund;
-        funding.fullyRefunded = (funding.amountUsed == funding.funding);
-        payable(msg.sender).transfer(availableFundsForRefund);
+        CampaignManager.Campaign storage campaign = campaigns[_id];
+        campaign.refundOwnFunding(_fundingID);
     }
 
     // Refund closed campaign stake ✅
     function refundStake(uint256 _id) public isCampaignCreator(_id) {
-        Campaign storage campaign = campaigns[_id];
-        if (campaign.status == CampaignStatus.Closed) {
-            campaign.stake.amountUsed = campaign.stake.funding;
-            campaign.stake.fullyRefunded = true;
-            campaign.creator.transfer(campaign.stake.funding);
-        }
-    }
-
-    // Update Campaign ⚠️
-    function updateCampaign(
-        uint256 _id,
-        string memory _title,
-        string memory _metadata,
-        // CampaignStyle _style,
-        uint256 _deadline,
-        CampaignStatus _status,
-        address payable[] memory _owners,
-        address payable[] memory _acceptors
-    ) public isCampaignOwner(_id) isFutureTimestamp(_deadline) {
-        require(
-            _owners.length > 0,
-            "Campaign must have at least one owner at all times"
-        );
-        if (_status == CampaignStatus.Closed) {
-            // require that all projects inside are closed
-            for (
-                uint256 i = 0;
-                i < campaigns[_id].allChildProjects.length;
-                i++
-            ) {
-                require(
-                    projects[campaigns[_id].allChildProjects[i]].status ==
-                        ProjectStatus.Closed,
-                    "Projects must be closed"
-                );
-            }
-        }
-
-        Campaign storage campaign = campaigns[_id];
-
-        campaign.title = _title; //✅
-        campaign.metadata = _metadata; //✅
-        //campaign.style = _style; //❌ (needs all private-to-open effects for transition)
-        //campaign.deadline = _deadline; //⚠️ (can't be less than maximum settled time of current stage of contained projects)
-        campaign.status = _status; //⚠️ (can't be closed if there are open projects)
-        campaign.owners = _owners; //✅
-        campaign.acceptors = _acceptors; //✅
+        CampaignManager.Campaign storage campaign = campaigns[_id];
+        campaign.refundStake();
     }
 
     // Lock amounts of funds by going through each funding and locking until the expense is covered ✅
@@ -374,8 +340,7 @@ contract StandardCampaign {
         uint256 _id,
         uint256 _expense
     ) internal isCampaignExisting(_id) isEffectiveBalanceMoreThanZero(_id) {
-        Campaign storage campaign = campaigns[_id];
-        // Calls the library function on the campaign's fundings array
+        CampaignManager.Campaign storage campaign = campaigns[_id];
         campaign.fundings.fundLockAmount(_expense);
     }
 
@@ -384,9 +349,7 @@ contract StandardCampaign {
         uint256 _id,
         uint256 _expense
     ) internal isCampaignExisting(_id) isLockedBalanceMoreThanZero(_id) {
-        Campaign storage campaign = campaigns[_id];
-
-        // If the expense is to be unlocked, remove it from the amountLocked of the fundings (in reverse order)
+        CampaignManager.Campaign storage campaign = campaigns[_id];
         campaign.fundings.fundUnlockAmount(_expense);
     }
 
@@ -395,16 +358,13 @@ contract StandardCampaign {
         uint256 _id,
         uint256 _expense
     ) internal isCampaignExisting(_id) isLockedBalanceMoreThanZero(_id) {
-        Campaign storage campaign = campaigns[_id];
-
-        // If the expense is to be used, add it to the amountUsed of the fundings
-        // loop over all the non fullyRefunded fundings and add a part to amountUsed which is proportional to how much the funding is
+        CampaignManager.Campaign storage campaign = campaigns[_id];
         campaign.fundings.fundUseAmount(_expense);
     }
 
     // Cleanup all tasks that are not closed at the right time for all projects ✅
     function cleanUpNotClosedTasksForAllProjects(uint256 _id) internal {
-        Campaign storage campaign = campaigns[_id];
+        CampaignManager.Campaign storage campaign = campaigns[_id];
         for (uint256 i = 0; i < campaign.allChildProjects.length; i++) {
             cleanUpNotClosedTasks(campaign.allChildProjects[i]);
         }
@@ -412,7 +372,7 @@ contract StandardCampaign {
 
     // Unlock the funds for all projects that can have their funds unlocked ✅
     function unlockTheFundsForAllProjectsPostCleanup(uint256 _id) internal {
-        Campaign storage campaign = campaigns[_id];
+        CampaignManager.Campaign storage campaign = campaigns[_id];
         for (uint256 i = 0; i < campaign.allChildProjects.length; i++) {
             unlockTheFundsForProjectPostCleanup(campaign.allChildProjects[i]);
         }
@@ -421,8 +381,13 @@ contract StandardCampaign {
     /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// CAMPAIGN READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
     // Get all campaigns ✅
-    function getAllCampaigns() public view returns (Campaign[] memory) {
-        Campaign[] memory _campaigns = new Campaign[](campaignCount);
+    function getAllCampaigns()
+        public
+        view
+        returns (CampaignManager.Campaign[] memory)
+    {
+        CampaignManager.Campaign[]
+            memory _campaigns = new CampaignManager.Campaign[](campaignCount);
         for (uint256 i = 0; i < campaignCount; i++) {
             _campaigns[i] = campaigns[i];
         }
@@ -432,14 +397,15 @@ contract StandardCampaign {
     // Get campaign by ID ✅
     function getCampaignByID(
         uint256 _id
-    ) public view returns (Campaign memory) {
-        return campaigns[_id];
+    ) public view returns (CampaignManager.Campaign memory) {
+        CampaignManager.Campaign memory campaign = campaigns[_id];
+        return campaign;
     }
 
     // Get campaign Fundings struct array ✅
     function getFundingsOfCampaign(
         uint256 _id
-    ) public view returns (Fundings[] memory) {
+    ) public view returns (FundingsManager.Fundings[] memory) {
         return campaigns[_id].fundings;
     }
 
@@ -447,7 +413,7 @@ contract StandardCampaign {
     function getCampaignTotalFunding(
         uint256 _id
     ) public view isCampaignExisting(_id) returns (uint256) {
-        Campaign memory campaign = campaigns[_id];
+        CampaignManager.Campaign memory campaign = campaigns[_id];
         uint256 totalFunding = 0;
         for (uint256 i = 0; i < campaign.fundings.length; i++) {
             totalFunding += campaign.fundings[i].funding;
@@ -459,7 +425,7 @@ contract StandardCampaign {
     function getCampaignUnusedBalance(
         uint256 _id
     ) public view isCampaignExisting(_id) returns (uint256) {
-        Campaign memory campaign = campaigns[_id];
+        CampaignManager.Campaign memory campaign = campaigns[_id];
         uint256 totalBalance = 0;
         for (uint256 i = 0; i < campaign.fundings.length; i++) {
             if (!campaign.fundings[i].fullyRefunded) {
@@ -475,7 +441,7 @@ contract StandardCampaign {
     function getCampaignLockedRewards(
         uint256 _id
     ) public view isCampaignExisting(_id) returns (uint256) {
-        Campaign memory campaign = campaigns[_id];
+        CampaignManager.Campaign memory campaign = campaigns[_id];
         uint256 totalLockedRewards = 0;
         for (uint256 i = 0; i < campaign.fundings.length; i++) {
             if (!campaign.fundings[i].fullyRefunded) {
@@ -496,7 +462,6 @@ contract StandardCampaign {
     /// PROJECT WRITE FUNCTIONS 🔻🔻🔻🔻🔻🔻🔻🔻🔻🔻
     // Create a new project ✅
     function makeProject(
-        string memory _title,
         string memory _metadata,
         uint256 _deadline,
         bool _applicationRequired,
@@ -512,22 +477,24 @@ contract StandardCampaign {
             _parentProject <= projectCount + 1,
             "Parent project must exist or be the next top-level project to be created"
         );
-        Project storage project = projects[projectCount];
-        Campaign storage parentCampaign = campaigns[_parentCampaign];
+        ProjectManager.Project storage project = projects[projectCount];
+        CampaignManager.Campaign storage parentCampaign = campaigns[
+            _parentCampaign
+        ];
 
         // Populate project
-        project.title = _title;
         project.metadata = _metadata;
         project.creationTime = block.timestamp;
-        project.status = ProjectStatus.Gate;
-        project.nextMilestone = NextMilestone(0, 0, 0);
+        project.status = ProjectManager.ProjectStatus.Gate;
+        project.nextMilestone = ProjectManager.NextMilestone(0, 0, 0);
+        project.applicationRequired = _applicationRequired;
 
-        // Open campaigns don't require applications
-        if (parentCampaign.style == CampaignStyle.Open) {
-            project.applicationRequired = false;
-        } else {
-            project.applicationRequired = _applicationRequired;
-        }
+        // // Open campaigns don't require applications
+        // if (parentCampaign.style == CampaignManager.CampaignStyle.Open) {
+        //     project.applicationRequired = false;
+        // } else {
+        //     project.applicationRequired = _applicationRequired;
+        // }
 
         // In THIS project being created, set the parent campaign and project
         project.parentCampaign = _parentCampaign;
@@ -559,9 +526,9 @@ contract StandardCampaign {
         isCampaignRunning(projects[_id].parentCampaign)
         isCampaignOwner(projects[_id].parentCampaign)
     {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
         require(
-            project.status == ProjectStatus.Gate,
+            project.status == ProjectManager.ProjectStatus.Gate,
             "Project must currently be at gate"
         );
         require(
@@ -572,7 +539,7 @@ contract StandardCampaign {
         // Just to clear any loose ends
         goToSettledStatus(_id, 0, 1, 2);
 
-        project.status = ProjectStatus.Closed;
+        project.status = ProjectManager.ProjectStatus.Closed;
 
         // Clear fast forward votes
         delete project.fastForward;
@@ -592,7 +559,7 @@ contract StandardCampaign {
         isProjectRunning(_id)
         isProjectGate(_id)
     {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
 
         // Check conditions for going to settled
         require(toSettledConditions(_id), "Project cannot go to settled");
@@ -612,7 +579,7 @@ contract StandardCampaign {
         // Get NotClosed tasks
         uint256[] memory notClosedTaskIds = getTaskIdsOfProjectClosedFilter(
             _id,
-            TaskStatusFilter.NotClosed
+            TaskManager.TaskStatusFilter.NotClosed
         );
 
         // Get latest task deadline
@@ -654,7 +621,7 @@ contract StandardCampaign {
         fundLockAmount(project.parentCampaign, project.reward);
 
         // Update project status
-        project.status = ProjectStatus.Settled;
+        project.status = ProjectManager.ProjectStatus.Settled;
 
         // Clear fast forward votes
         delete project.fastForward;
@@ -669,13 +636,13 @@ contract StandardCampaign {
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
     {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
 
         // GOING INTO STAGE 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
-        if (project.status == ProjectStatus.Settled) {
+        if (project.status == ProjectManager.ProjectStatus.Settled) {
             if (toStageFastForwardConditions(_id)) {
                 // update project status
-                project.status = ProjectStatus.Stage;
+                project.status = ProjectManager.ProjectStatus.Stage;
                 // delete all votes
                 delete project.fastForward;
 
@@ -685,7 +652,7 @@ contract StandardCampaign {
                 // adjust lateness
                 adjustLatenessBeforeStage(_id);
                 // update project status
-                project.status = ProjectStatus.Stage;
+                project.status = ProjectManager.ProjectStatus.Stage;
                 // delete all votes
                 delete project.fastForward;
 
@@ -694,16 +661,16 @@ contract StandardCampaign {
             }
         }
         // GOING INTO GATE 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
-        else if (project.status == ProjectStatus.Stage) {
+        else if (project.status == ProjectManager.ProjectStatus.Stage) {
             if (toGateFastForwardConditions(_id)) {
                 // update project status
-                project.status = ProjectStatus.Gate;
+                project.status = ProjectManager.ProjectStatus.Gate;
                 // delete all votes
                 delete project.fastForward;
                 return;
             } else if (toGateConditions(_id)) {
                 // update project status
-                project.status = ProjectStatus.Gate;
+                project.status = ProjectManager.ProjectStatus.Gate;
                 // delete all votes
                 delete project.fastForward;
                 return;
@@ -713,8 +680,10 @@ contract StandardCampaign {
 
     // Figure out where we are and where we should be and fix is needed ✅
     function statusFixer(uint256 _id) public {
-        Project storage project = projects[_id];
-        ProjectStatus shouldBeStatus = whatStatusProjectShouldBeAt(_id);
+        ProjectManager.Project storage project = projects[_id];
+        ProjectManager.ProjectStatus shouldBeStatus = whatStatusProjectShouldBeAt(
+                _id
+            );
 
         // If we are where we should be and votes allow to fast forward, try to fast forward
         // Otherwise, do nothing
@@ -728,8 +697,8 @@ contract StandardCampaign {
         // If we should be in settled but are in gate, then return
         // moving to settled needs owner input so we'll just wait here
         if (
-            shouldBeStatus == ProjectStatus.Settled &&
-            project.status == ProjectStatus.Gate
+            shouldBeStatus == ProjectManager.ProjectStatus.Settled &&
+            project.status == ProjectManager.ProjectStatus.Gate
         ) {
             cleanUpNotClosedTasksForAllProjects(project.parentCampaign);
             unlockTheFundsForAllProjectsPostCleanup(project.parentCampaign);
@@ -756,7 +725,7 @@ contract StandardCampaign {
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
     {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
         uint256 lateness = 0;
 
         // If we are late, add lateness to all tasks and nextmilestone
@@ -769,7 +738,7 @@ contract StandardCampaign {
         // Get NotClosed task IDs
         uint256[] memory notClosedTaskIds = getTaskIdsOfProjectClosedFilter(
             _id,
-            TaskStatusFilter.NotClosed
+            TaskManager.TaskStatusFilter.NotClosed
         );
 
         // Add lateness to all tasks
@@ -790,29 +759,30 @@ contract StandardCampaign {
         uint256 _nextSettledStartTimestamp,
         uint256 latestTaskDeadline
     ) private {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
 
         // Upcoming milestones based on input
-        NextMilestone memory _nextMilestone = NextMilestone(
-            // timestamp of stage start must be at least 24 hours from now as grace period
-            Utilities.max(
-                _nextStageStartTimestamp,
-                block.timestamp + minimumSettledTime
-            ),
-            // timestamp of gate start is at least after latest task deadline
-            Utilities.max(
-                _nextGateStartTimestamp,
-                latestTaskDeadline + 1 seconds
-            ),
-            // timestamp of settled start must be after latest task deadline + 2 day
-            Utilities.max(
-                _nextSettledStartTimestamp,
+        ProjectManager.NextMilestone memory _nextMilestone = ProjectManager
+            .NextMilestone(
+                // timestamp of stage start must be at least 24 hours from now as grace period
+                Utilities.max(
+                    _nextStageStartTimestamp,
+                    block.timestamp + minimumSettledTime
+                ),
+                // timestamp of gate start is at least after latest task deadline
                 Utilities.max(
                     _nextGateStartTimestamp,
                     latestTaskDeadline + 1 seconds
-                ) + minimumGateTime
-            )
-        );
+                ),
+                // timestamp of settled start must be after latest task deadline + 2 day
+                Utilities.max(
+                    _nextSettledStartTimestamp,
+                    Utilities.max(
+                        _nextGateStartTimestamp,
+                        latestTaskDeadline + 1 seconds
+                    ) + minimumGateTime
+                )
+            );
 
         project.nextMilestone = _nextMilestone;
     }
@@ -828,7 +798,7 @@ contract StandardCampaign {
                 checkIsProjectWorker(_id),
             "Sender must be an acceptor, worker or owner"
         );
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
 
         bool voterFound = false;
 
@@ -841,7 +811,7 @@ contract StandardCampaign {
         }
 
         if (!voterFound) {
-            project.fastForward.push(Vote(msg.sender, _vote));
+            project.fastForward.push(ProjectManager.Vote(msg.sender, _vote));
         }
     }
 
@@ -849,12 +819,15 @@ contract StandardCampaign {
     function workerDropOut(
         uint256 _id
     ) public isProjectExisting(_id) lazyStatusUpdaterStart(_id) {
-        Project storage project = projects[_id];
-        Campaign storage campaign = campaigns[project.parentCampaign];
+        ProjectManager.Project storage project = projects[_id];
+        CampaignManager.Campaign storage campaign = campaigns[
+            project.parentCampaign
+        ];
 
         // Ensure project status is not stage
         require(
-            project.status != ProjectStatus.Stage && checkIsProjectWorker(_id),
+            project.status != ProjectManager.ProjectStatus.Stage &&
+                checkIsProjectWorker(_id),
             "Project must currently be at gate or settled or closed"
         );
 
@@ -883,8 +856,10 @@ contract StandardCampaign {
         isCampaignOwner(projects[_id].parentCampaign)
         lazyStatusUpdaterStart(_id)
     {
-        Project storage project = projects[_id];
-        Campaign storage campaign = campaigns[project.parentCampaign];
+        ProjectManager.Project storage project = projects[_id];
+        CampaignManager.Campaign storage campaign = campaigns[
+            project.parentCampaign
+        ];
 
         // Ensure worker is on project
         require(
@@ -894,7 +869,7 @@ contract StandardCampaign {
 
         // Ensure project status is not stage
         require(
-            project.status != ProjectStatus.Stage,
+            project.status != ProjectManager.ProjectStatus.Stage,
             "Project must currently be at gate or settled or closed"
         );
 
@@ -922,7 +897,7 @@ contract StandardCampaign {
         isProjectExisting(_id)
         isCampaignOwner(projects[_id].parentCampaign)
     {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
 
         // Ensure worker is on project
         require(
@@ -932,13 +907,13 @@ contract StandardCampaign {
 
         // Ensure project status is not stage
         require(
-            project.status != ProjectStatus.Stage,
+            project.status != ProjectManager.ProjectStatus.Stage,
             "Project must currently be at gate or settled or closed"
         );
 
         // Refund stake
         for (uint256 i = 0; i < project.applications.length; i++) {
-            Application storage application = applications[
+            ApplicationManager.Application storage application = applications[
                 project.applications[i]
             ];
             // Find worker's application, ensure it was accepted and not refunded
@@ -972,8 +947,10 @@ contract StandardCampaign {
         isMoneyIntended(_stake)
         isMoreThanEnrolStake(_stake)
     {
-        Project storage project = projects[_id];
-        Campaign storage campaign = campaigns[project.parentCampaign];
+        ProjectManager.Project storage project = projects[_id];
+        CampaignManager.Campaign storage campaign = campaigns[
+            project.parentCampaign
+        ];
 
         require(!project.applicationRequired, "Project requires applications");
         require(
@@ -982,7 +959,9 @@ contract StandardCampaign {
         );
 
         // Creates application to deal with stake
-        Application storage application = applications[applicationCount];
+        ApplicationManager.Application storage application = applications[
+            applicationCount
+        ];
         application.metadata = "No Application Required";
         application.applicant = msg.sender;
         application.accepted = true;
@@ -1017,7 +996,7 @@ contract StandardCampaign {
         isMoreThanEnrolStake(_stake)
         returns (uint256)
     {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
         require(
             project.applicationRequired,
             "Project does not require applications"
@@ -1028,7 +1007,9 @@ contract StandardCampaign {
             "Sender must not already be a worker"
         );
 
-        Application storage application = applications[applicationCount];
+        ApplicationManager.Application storage application = applications[
+            applicationCount
+        ];
         application.metadata = _metadata;
         application.applicant = msg.sender;
         application.accepted = false;
@@ -1056,14 +1037,21 @@ contract StandardCampaign {
         )
         isApplicationExisting(_applicationID)
     {
-        Application storage application = applications[_applicationID];
-        Project storage project = projects[application.parentProject];
-        Campaign storage campaign = campaigns[project.parentCampaign];
+        ApplicationManager.Application storage application = applications[
+            _applicationID
+        ];
+        ProjectManager.Project storage project = projects[
+            application.parentProject
+        ];
+        CampaignManager.Campaign storage campaign = campaigns[
+            project.parentCampaign
+        ];
         // if project or campaign is closed, decline or if project is past its deadline, decline
         // also refund stake
         if (
-            project.status == ProjectStatus.Closed ||
-            campaigns[project.parentCampaign].status == CampaignStatus.Closed ||
+            project.status == ProjectManager.ProjectStatus.Closed ||
+            campaigns[project.parentCampaign].status ==
+            CampaignManager.CampaignStatus.Closed ||
             !_accepted
         ) {
             applications[_applicationID].accepted = false;
@@ -1093,7 +1081,7 @@ contract StandardCampaign {
         uint256 _id
     ) public isCampaignExisting(_id) isCampaignRunning(_id) {
         // Get the campaign
-        Campaign storage campaign = campaigns[_id];
+        CampaignManager.Campaign storage campaign = campaigns[_id];
 
         // unlock the funds of the project -> inside check we're past decision time and dispute time
 
@@ -1114,10 +1102,10 @@ contract StandardCampaign {
         uint256 _id,
         uint256 _fundsAtThatLevel
     ) internal isProjectExisting(_id) {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
         uint256 thisProjectReward;
 
-        if (project.status == ProjectStatus.Closed) {
+        if (project.status == ProjectManager.ProjectStatus.Closed) {
             return;
         }
 
@@ -1139,7 +1127,7 @@ contract StandardCampaign {
 
         uint256[] memory notClosedTaskIds = getTaskIdsOfProjectClosedFilter(
             _id,
-            TaskStatusFilter.NotClosed
+            TaskManager.TaskStatusFilter.NotClosed
         );
 
         // Updating tasks requires reward conditions to be met
@@ -1158,10 +1146,12 @@ contract StandardCampaign {
         // Compute the rewards for child projects
         for (uint256 i = 0; i < project.childProjects.length; i++) {
             uint256 childProjectId = project.childProjects[i];
-            Project storage childProject = projects[childProjectId];
+            ProjectManager.Project storage childProject = projects[
+                childProjectId
+            ];
 
             // If project is NOT closed, then compute rewards
-            if (childProject.status != ProjectStatus.Closed) {
+            if (childProject.status != ProjectManager.ProjectStatus.Closed) {
                 // Calculate rewards for the child project
                 uint256 childProjectReward = (thisProjectReward *
                     childProject.weight) / 1000;
@@ -1175,10 +1165,10 @@ contract StandardCampaign {
     function updateProjectRewardsConditions(
         uint256 _id
     ) public view returns (bool) {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
 
-        bool atGate = project.status == ProjectStatus.Gate ||
-            project.status == ProjectStatus.Closed;
+        bool atGate = project.status == ProjectManager.ProjectStatus.Gate ||
+            project.status == ProjectManager.ProjectStatus.Closed;
         bool afterCleanup = block.timestamp >
             project.nextMilestone.startGateTimestamp +
                 taskSubmissionDecisionDisputeTime;
@@ -1199,23 +1189,23 @@ contract StandardCampaign {
         isProjectExisting(_id)
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
-        returns (ProjectStatus)
+        returns (ProjectManager.ProjectStatus)
     {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
         require(
-            project.status != ProjectStatus.Closed,
+            project.status != ProjectManager.ProjectStatus.Closed,
             "Project must be running"
         );
         if (block.timestamp < project.nextMilestone.startStageTimestamp) {
-            return ProjectStatus.Settled;
+            return ProjectManager.ProjectStatus.Settled;
         } else if (block.timestamp < project.nextMilestone.startGateTimestamp) {
-            return ProjectStatus.Stage;
+            return ProjectManager.ProjectStatus.Stage;
         } else if (
             block.timestamp < project.nextMilestone.startSettledTimestamp
         ) {
-            return ProjectStatus.Gate;
+            return ProjectManager.ProjectStatus.Gate;
         } else {
-            return ProjectStatus.Settled;
+            return ProjectManager.ProjectStatus.Settled;
         }
     }
 
@@ -1230,13 +1220,15 @@ contract StandardCampaign {
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
-        Project storage project = projects[_id];
-        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
-            _id,
-            TaskStatusFilter.NotClosed
-        );
+        ProjectManager.Project storage project = projects[_id];
+        TaskManager.Task[]
+            memory notClosedTasks = getTasksOfProjectClosedFilter(
+                _id,
+                TaskManager.TaskStatusFilter.NotClosed
+            );
 
-        bool currentStatusValid = project.status == ProjectStatus.Settled;
+        bool currentStatusValid = project.status ==
+            ProjectManager.ProjectStatus.Settled;
         bool projectHasWorkers = project.workers.length > 0;
         bool allTasksHaveWorkers = true;
         bool inStagePeriod = block.timestamp >=
@@ -1269,13 +1261,15 @@ contract StandardCampaign {
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
-        Project storage project = projects[_id];
-        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
-            _id,
-            TaskStatusFilter.NotClosed
-        );
+        ProjectManager.Project storage project = projects[_id];
+        TaskManager.Task[]
+            memory notClosedTasks = getTasksOfProjectClosedFilter(
+                _id,
+                TaskManager.TaskStatusFilter.NotClosed
+            );
 
-        bool currentStatusValid = project.status == ProjectStatus.Settled;
+        bool currentStatusValid = project.status ==
+            ProjectManager.ProjectStatus.Settled;
         bool projectHasWorkers = project.workers.length > 0;
         bool allTasksHaveWorkers = true;
         bool stillInSettledPeriod = block.timestamp <
@@ -1309,8 +1303,9 @@ contract StandardCampaign {
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
-        Project storage project = projects[_id];
-        bool currentStatusValid = project.status == ProjectStatus.Stage;
+        ProjectManager.Project storage project = projects[_id];
+        bool currentStatusValid = project.status ==
+            ProjectManager.ProjectStatus.Stage;
         bool inGatePeriod = block.timestamp >=
             project.nextMilestone.startGateTimestamp;
 
@@ -1328,19 +1323,24 @@ contract StandardCampaign {
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
-        Project storage project = projects[_id];
-        bool currentStatusValid = project.status == ProjectStatus.Stage;
+        ProjectManager.Project storage project = projects[_id];
+        bool currentStatusValid = project.status ==
+            ProjectManager.ProjectStatus.Stage;
         bool stillInStagePeriod = block.timestamp <
             project.nextMilestone.startGateTimestamp;
         bool allTasksHaveSubmissions = true;
 
         // Ensure all NotClosed tasks have submissions
-        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
-            _id,
-            TaskStatusFilter.NotClosed
-        );
+        TaskManager.Task[]
+            memory notClosedTasks = getTasksOfProjectClosedFilter(
+                _id,
+                TaskManager.TaskStatusFilter.NotClosed
+            );
         for (uint256 i = 0; i < notClosedTasks.length; i++) {
-            if (notClosedTasks[i].submission.status == SubmissionStatus.None) {
+            if (
+                notClosedTasks[i].submission.status ==
+                TaskManager.SubmissionStatus.None
+            ) {
                 allTasksHaveSubmissions = false;
                 return false;
             }
@@ -1364,9 +1364,10 @@ contract StandardCampaign {
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
 
-        bool currentStatusValid = project.status == ProjectStatus.Gate;
+        bool currentStatusValid = project.status ==
+            ProjectManager.ProjectStatus.Gate;
         bool inSettledPeriod = block.timestamp >=
             project.nextMilestone.startSettledTimestamp;
 
@@ -1375,7 +1376,7 @@ contract StandardCampaign {
 
     // Checks that voting conditions are met ✅
     function checkFastForwardStatus(uint256 _id) public view returns (bool) {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
 
         // Check for each vote in the fastForward array, if at least 1 owner
         // and all workers voted true, and conditions are fulfilled,
@@ -1498,8 +1499,8 @@ contract StandardCampaign {
     function getApplicationByApplicant(
         uint256 _id,
         address _applicant
-    ) public view returns (Application memory application) {
-        Project storage project = projects[_id];
+    ) public view returns (ApplicationManager.Application memory application) {
+        ProjectManager.Project storage project = projects[_id];
         for (uint256 i = 0; i < project.applications.length; i++) {
             if (applications[project.applications[i]].applicant == _applicant) {
                 return applications[project.applications[i]];
@@ -1511,7 +1512,6 @@ contract StandardCampaign {
     /// TASK WRITE FUNCTIONS 🔻🔻🔻🔻🔻🔻🔻🔻🔻🔻
     // Create a new task
     function makeTask(
-        string memory _title,
         string memory _metadata,
         uint256 weight,
         uint256 _deadline,
@@ -1525,9 +1525,8 @@ contract StandardCampaign {
     {
         require(_deadline > block.timestamp, "Deadline must be in the future");
 
-        Task storage task = tasks[taskCount];
+        TaskManager.Task storage task = tasks[taskCount];
 
-        task.title = _title;
         task.metadata = _metadata;
         task.weight = weight;
         task.creationTime = block.timestamp;
@@ -1557,15 +1556,15 @@ contract StandardCampaign {
         isTaskNotClosed(_id)
         isProjectStage(tasks[_id].parentProject)
     {
-        Task storage task = tasks[_id];
+        TaskManager.Task storage task = tasks[_id];
         require(task.deadline > block.timestamp, "Task deadline has passed");
 
         // Create submission, if it already exists, overwrite it
-        Submission storage submission = task.submission;
+        TaskManager.Submission storage submission = task.submission;
         // Attach the IPFS hash for metadata
         submission.metadata = _metadata;
         // Submission status is pending after submission
-        submission.status = SubmissionStatus.Pending;
+        submission.status = TaskManager.SubmissionStatus.Pending;
     }
 
     // Submission decision by acceptors ✅
@@ -1582,10 +1581,12 @@ contract StandardCampaign {
         isTaskNotClosed(_id)
         isProjectGate(tasks[_id].parentProject)
     {
-        Project storage project = projects[tasks[_id].parentProject];
+        ProjectManager.Project storage project = projects[
+            tasks[_id].parentProject
+        ];
         // Campaign storage campaign = campaigns[project.parentCampaign];
-        Task storage task = tasks[_id];
-        Submission storage submission = task.submission;
+        TaskManager.Task storage task = tasks[_id];
+        TaskManager.Submission storage submission = task.submission;
 
         require(
             block.timestamp <
@@ -1594,20 +1595,20 @@ contract StandardCampaign {
             "Decision must happen during decision window"
         );
         require(
-            submission.status == SubmissionStatus.Pending,
+            submission.status == TaskManager.SubmissionStatus.Pending,
             "Submission must not already have decision"
         );
 
         // If decision is accepted, set submission status to accepted,
         // payout worker, update locked rewards and close task
         if (_accepted) {
-            submission.status = SubmissionStatus.Accepted;
+            submission.status = TaskManager.SubmissionStatus.Accepted;
             task.paid = true;
             task.closed = true;
             task.worker.transfer(task.reward);
             //campaign.lockedRewards -= task.reward;
         } else {
-            submission.status = SubmissionStatus.Declined;
+            submission.status = TaskManager.SubmissionStatus.Declined;
         }
     }
 
@@ -1615,7 +1616,7 @@ contract StandardCampaign {
     // Also automatically close tasks which have received declined submissions
     // and weren't disputed within the dispute time
     function cleanUpNotClosedTasks(uint256 _id) internal {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
         // Campaign storage campaign = campaigns[project.parentCampaign];
 
         // Past the decision time for submissions anyone can trigger the cleanup
@@ -1630,13 +1631,15 @@ contract StandardCampaign {
         // Get NotClosed tasks
         uint256[] memory notClosedTaskIds = getTaskIdsOfProjectClosedFilter(
             _id,
-            TaskStatusFilter.NotClosed
+            TaskManager.TaskStatusFilter.NotClosed
         );
 
         for (uint256 i = 0; i < notClosedTaskIds.length; i++) {
-            Task storage task = tasks[notClosedTaskIds[i]];
-            if (task.submission.status == SubmissionStatus.Pending) {
-                task.submission.status = SubmissionStatus.Accepted;
+            TaskManager.Task storage task = tasks[notClosedTaskIds[i]];
+            if (
+                task.submission.status == TaskManager.SubmissionStatus.Pending
+            ) {
+                task.submission.status = TaskManager.SubmissionStatus.Accepted;
                 task.closed = true;
                 task.paid = true;
                 task.worker.transfer(task.reward);
@@ -1644,7 +1647,8 @@ contract StandardCampaign {
             }
 
             if (
-                task.submission.status == SubmissionStatus.Declined &&
+                task.submission.status ==
+                TaskManager.SubmissionStatus.Declined &&
                 block.timestamp >=
                 project.nextMilestone.startGateTimestamp +
                     taskSubmissionDecisionDisputeTime
@@ -1657,7 +1661,7 @@ contract StandardCampaign {
     }
 
     function unlockTheFundsForProjectPostCleanup(uint256 _id) internal {
-        Project storage project = projects[_id];
+        ProjectManager.Project storage project = projects[_id];
 
         // We must be past the decision time and dispute time
         if (
@@ -1682,11 +1686,11 @@ contract StandardCampaign {
         lazyStatusUpdaterStart(tasks[_id].parentProject)
         isTaskNotClosed(_id)
     {
-        Task storage task = tasks[_id];
-        Project storage project = projects[task.parentProject];
+        TaskManager.Task storage task = tasks[_id];
+        ProjectManager.Project storage project = projects[task.parentProject];
 
         require(
-            project.status == ProjectStatus.Settled &&
+            project.status == ProjectManager.ProjectStatus.Settled &&
                 checkIsProjectWorker(_id),
             "Project must be settled"
         );
@@ -1729,12 +1733,12 @@ contract StandardCampaign {
         isTaskNotClosed(_id)
         isProjectGate(tasks[_id].parentProject)
     {
-        Task storage task = tasks[_id];
-        Project storage project = projects[task.parentProject];
-        Submission storage submission = task.submission;
+        TaskManager.Task storage task = tasks[_id];
+        ProjectManager.Project storage project = projects[task.parentProject];
+        TaskManager.Submission storage submission = task.submission;
 
         require(
-            submission.status == SubmissionStatus.Declined,
+            submission.status == TaskManager.SubmissionStatus.Declined,
             "Submission must be declined"
         );
         require(
@@ -1744,7 +1748,7 @@ contract StandardCampaign {
             "Dispute must happen during dispute window"
         );
 
-        submission.status = SubmissionStatus.Disputed;
+        submission.status = TaskManager.SubmissionStatus.Disputed;
         task.closed = true;
         task.paid = false;
 
@@ -1757,22 +1761,22 @@ contract StandardCampaign {
     // How many tasks match filter? helper function for getTasksOfProjectClosedFilter() below✅
     function countTasksWithFilter(
         uint256 _id,
-        TaskStatusFilter _statusFilter
+        TaskManager.TaskStatusFilter _statusFilter
     ) internal view returns (uint256) {
         uint256 taskCounter = 0;
         uint256[] memory childTasks = projects[_id].childTasks;
         for (uint256 i = 0; i < childTasks.length; i++) {
             if (
-                _statusFilter == TaskStatusFilter.Closed &&
+                _statusFilter == TaskManager.TaskStatusFilter.Closed &&
                 tasks[childTasks[i]].closed
             ) {
                 taskCounter++;
             } else if (
-                _statusFilter == TaskStatusFilter.NotClosed &&
+                _statusFilter == TaskManager.TaskStatusFilter.NotClosed &&
                 !tasks[childTasks[i]].closed
             ) {
                 taskCounter++;
-            } else if (_statusFilter == TaskStatusFilter.All) {
+            } else if (_statusFilter == TaskManager.TaskStatusFilter.All) {
                 taskCounter++;
             }
         }
@@ -1782,12 +1786,12 @@ contract StandardCampaign {
     // Get tasks in a project based on Closed/NotClosed filter✅
     function getTasksOfProjectClosedFilter(
         uint256 _id,
-        TaskStatusFilter _statusFilter
-    ) public view returns (Task[] memory) {
-        Project memory parentProject = projects[_id];
-        if (_statusFilter == TaskStatusFilter.NotClosed) {
+        TaskManager.TaskStatusFilter _statusFilter
+    ) public view returns (TaskManager.Task[] memory) {
+        ProjectManager.Project memory parentProject = projects[_id];
+        if (_statusFilter == TaskManager.TaskStatusFilter.NotClosed) {
             // Get uncompleted tasks
-            Task[] memory _tasks = new Task[](
+            TaskManager.Task[] memory _tasks = new TaskManager.Task[](
                 countTasksWithFilter(_id, _statusFilter)
             );
             uint256 j = 0;
@@ -1798,9 +1802,9 @@ contract StandardCampaign {
                 }
             }
             return _tasks;
-        } else if (_statusFilter == TaskStatusFilter.Closed) {
+        } else if (_statusFilter == TaskManager.TaskStatusFilter.Closed) {
             // Get completed tasks
-            Task[] memory _tasks = new Task[](
+            TaskManager.Task[] memory _tasks = new TaskManager.Task[](
                 countTasksWithFilter(_id, _statusFilter)
             );
             uint256 j = 0;
@@ -1813,7 +1817,9 @@ contract StandardCampaign {
             return _tasks;
         } else {
             // Get all tasks
-            Task[] memory _tasks = new Task[](parentProject.childTasks.length);
+            TaskManager.Task[] memory _tasks = new TaskManager.Task[](
+                parentProject.childTasks.length
+            );
             for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
                 _tasks[i] = tasks[parentProject.childTasks[i]];
             }
@@ -1824,10 +1830,10 @@ contract StandardCampaign {
     // Get task IDs in a project based on Closed/NotClosed filter✅
     function getTaskIdsOfProjectClosedFilter(
         uint256 _id,
-        TaskStatusFilter _statusFilter
+        TaskManager.TaskStatusFilter _statusFilter
     ) public view returns (uint256[] memory) {
-        Project memory parentProject = projects[_id];
-        if (_statusFilter == TaskStatusFilter.NotClosed) {
+        ProjectManager.Project memory parentProject = projects[_id];
+        if (_statusFilter == TaskManager.TaskStatusFilter.NotClosed) {
             // Get uncompleted tasks
             uint256[] memory _tasks = new uint256[](
                 countTasksWithFilter(_id, _statusFilter)
@@ -1840,7 +1846,7 @@ contract StandardCampaign {
                 }
             }
             return _tasks;
-        } else if (_statusFilter == TaskStatusFilter.Closed) {
+        } else if (_statusFilter == TaskManager.TaskStatusFilter.Closed) {
             // Get completed tasks
             uint256[] memory _tasks = new uint256[](
                 countTasksWithFilter(_id, _statusFilter)
