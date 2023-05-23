@@ -21,4 +21,7 @@
   - other checks
 
 - toSettledStatus
+
   - check if we are in gate and in settled period
+
+- removed workers should be removed from campaign too
