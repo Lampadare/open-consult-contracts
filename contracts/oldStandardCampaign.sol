@@ -27,19 +27,19 @@ contract StandardCampaign {
 
     // Mapping of campaign IDs to campaigns, IDs are numbers starting from 0
     mapping(uint256 => CampaignManager.Campaign) public campaigns;
-    uint256 public campaignCount = 0;
+    uint256 public campaignCount;
 
     // Mapping of project IDs to projects, IDs are numbers starting from 0
     mapping(uint256 => ProjectManager.Project) public projects;
-    uint256 public projectCount = 0;
+    uint256 public projectCount;
 
     // Mapping of task IDs to tasks, IDs are numbers starting from 0
     mapping(uint256 => TaskManager.Task) public tasks;
-    uint256 public taskCount = 0;
+    uint256 public taskCount;
 
     // Mapping of task IDs to tasks, IDs are numbers starting from 0
     mapping(uint256 => ProjectManager.Application) public applications;
-    uint256 public applicationCount = 0;
+    uint256 public applicationCount;
 
     // Minimum stake required to create a Private campaign
     uint256 public minStake = 0.0025 ether;
@@ -98,32 +98,6 @@ contract StandardCampaign {
     }
     modifier isCampaignAcceptor(uint256 _id) {
         require(checkIsCampaignAcceptor(_id), "E4");
-        _;
-    }
-    modifier isCampaignWorker(uint256 _id) {
-        bool isWorker = false;
-        for (uint256 i = 0; i < campaigns[_id].workers.length; i++) {
-            if (msg.sender == campaigns[_id].workers[i]) {
-                isWorker = true;
-                break;
-            }
-        }
-        require(isWorker, "E6");
-        _;
-    }
-    modifier isCampaignStakeholder(uint256 _id) {
-        bool isStakeholder = false;
-        for (
-            uint256 i = 0;
-            i < campaigns[_id].allTimeStakeholders.length;
-            i++
-        ) {
-            if (msg.sender == campaigns[_id].allTimeStakeholders[i]) {
-                isStakeholder = true;
-                break;
-            }
-        }
-        require(isStakeholder, "E7");
         _;
     }
 
@@ -726,105 +700,32 @@ contract StandardCampaign {
     }
 
     // Worker drop out of project ✅
-    function workerDropOut(uint256 _id) public {
-        checkProjectExists(_id);
-        statusFixer(_id);
+    function workerDropOut(uint256 _projectId, uint256 _applicationId) public {
+        checkProjectExists(_projectId);
+        statusFixer(_projectId);
 
-        ProjectManager.Project storage project = projects[_id];
-        CampaignManager.Campaign storage campaign = campaigns[
-            project.parentCampaign
+        ProjectManager.Project storage project = projects[_projectId];
+        ProjectManager.Application storage application = applications[
+            _applicationId
         ];
 
-        // Ensure project status is not stage
-        require(
-            project.status != ProjectManager.ProjectStatus.Stage &&
-                checkIsProjectWorker(_id),
-            "E28"
-        );
-
-        // Remove worker from project
-        Utilities.deleteItemInAddressArray(msg.sender, project.workers);
-        // Remove worker from campaign
-        Utilities.deleteItemInPayableAddressArray(
-            payable(msg.sender),
-            campaign.workers
-        );
-
-        // Add Worker to pastWorkers in project
-        project.pastWorkers.push(msg.sender);
-
-        // Refund stake
-        refundWorkerEnrolStake(_id, msg.sender);
+        project.workerDropOut(application, _applicationId);
     }
 
     // Remove worker from project by owner 📍
     function fireWorker(
-        uint256 _id,
-        address _worker
-    ) public isCampaignOwner(projects[_id].parentCampaign) {
-        checkProjectExists(_id);
+        uint256 _projectId,
+        uint256 _applicationId
+    ) public isCampaignOwner(projects[_projectId].parentCampaign) {
+        checkProjectExists(_projectId);
         // isOwner?
-        statusFixer(_id);
-        ProjectManager.Project storage project = projects[_id];
-        CampaignManager.Campaign storage campaign = campaigns[
-            project.parentCampaign
+        statusFixer(_projectId);
+        ProjectManager.Project storage project = projects[_projectId];
+        ProjectManager.Application storage application = applications[
+            _applicationId
         ];
 
-        // Ensure worker is on project
-        require(checkIsProjectWorker(_id, _worker), "E29");
-
-        // Ensure project status is not stage
-        require(project.status != ProjectManager.ProjectStatus.Stage, "E30");
-
-        // Remove worker from project
-        Utilities.deleteItemInAddressArray(_worker, project.workers);
-        // Remove worker from campaign
-        Utilities.deleteItemInPayableAddressArray(
-            payable(_worker),
-            campaign.workers
-        );
-
-        // Add Worker to pastWorkers in project
-        project.pastWorkers.push(_worker);
-
-        // Refund stake
-        refundWorkerEnrolStake(_id, _worker);
-    }
-
-    // Internal function to refund worker enrol stake and delete appliction 📍
-    function refundWorkerEnrolStake(
-        uint256 _id,
-        address _worker
-    ) internal isCampaignOwner(projects[_id].parentCampaign) {
-        checkProjectExists(_id);
-        ProjectManager.Project storage project = projects[_id];
-
-        // Ensure worker is on project
-        require(checkIsProjectWorker(_id, _worker), "E31");
-
-        // Ensure project status is not stage
-        require(project.status != ProjectManager.ProjectStatus.Stage, "E32");
-
-        // Refund stake
-        for (uint256 i = 0; i < project.applications.length; i++) {
-            ProjectManager.Application storage application = applications[
-                project.applications[i]
-            ];
-            // Find worker's application, ensure it was accepted and not refunded
-            if (
-                application.applicant == _worker &&
-                !application.enrolStake.fullyRefunded &&
-                application.accepted
-            ) {
-                // Refund stake in application
-                application.enrolStake.amountUsed = application
-                    .enrolStake
-                    .funding;
-                application.enrolStake.fullyRefunded = true;
-                payable(_worker).transfer(application.enrolStake.funding);
-                Utilities.deleteItemInUintArray(i, project.applications); //-> Get rid of refunded application
-            }
-        }
+        project.fireWorker(application, _applicationId);
     }
 
     // Enrol to project as worker when no application is required ✅
@@ -948,7 +849,6 @@ contract StandardCampaign {
         } else if (_accepted) {
             project.workers.push(application.applicant);
             campaign.allTimeStakeholders.push(payable(application.applicant));
-            campaign.workers.push(payable(application.applicant));
             application.accepted = true;
             // deleteItemInUintArray(_applicationID, project.applications); maybe?? -> only on refund
         }
@@ -1335,39 +1235,40 @@ contract StandardCampaign {
             "E42"
         );
 
+        task.worker = payable(msg.sender);
+
         // If stake by sender is strictly superior than stake of current worker on task
         // then remove current worker from task and assign sender to task
-        if (task.worker != address(0)) {
-            if (
-                getApplicationByApplicant(_id, task.worker).enrolStake.funding <
-                getApplicationByApplicant(_id, msg.sender).enrolStake.funding
-            ) {
-                // Remove worker from task
-                task.worker = payable(address(0));
-                // Assign sender to task
-                task.worker = payable(msg.sender);
-                return;
-            } else {
-                return;
-            }
-        } else {
-            // Assign sender to task
-            task.worker = payable(msg.sender);
-        }
+        // if (task.worker != address(0)) {
+        //     if (
+        //         getApplicationByApplicant(_id, task.worker).enrolStake.funding <
+        //         getApplicationByApplicant(_id, msg.sender).enrolStake.funding
+        //     ) {
+        //         // Remove worker from task
+        //         task.worker = payable(address(0));
+        //         // Assign sender to task
+        //         task.worker = payable(msg.sender);
+        //         return;
+        //     } else {
+        //         return;
+        //     }
+        // } else {
+        // Assign sender to task
+        //}
     }
 
-    // Get the application of a worker on a project by their address 📍
-    function getApplicationByApplicant(
-        uint256 _id,
-        address _applicant
-    ) public view returns (ProjectManager.Application memory application) {
-        ProjectManager.Project storage project = projects[_id];
-        for (uint256 i = 0; i < project.applications.length; i++) {
-            if (applications[project.applications[i]].applicant == _applicant) {
-                return applications[project.applications[i]];
-            }
-        }
-    }
+    // // Get the application of a worker on a project by their address 📍
+    // function getApplicationByApplicant(
+    //     uint256 _id,
+    //     address _applicant
+    // ) public view returns (ProjectManager.Application memory application) {
+    //     ProjectManager.Project storage project = projects[_id];
+    //     for (uint256 i = 0; i < project.applications.length; i++) {
+    //         if (applications[project.applications[i]].applicant == _applicant) {
+    //             return applications[project.applications[i]];
+    //         }
+    //     }
+    // }
 
     // Raise a dispute on a declined submission ✅
     // ⚠️ -> needs functionality behind it, currently just a placeholder
@@ -1420,10 +1321,7 @@ contract StandardCampaign {
         payable(msg.sender).transfer(address(this).balance);
     }
 
-    function dispute(
-        uint256 _id,
-        string memory _metadata
-    ) public isCampaignStakeholder(_id) {
+    function dispute(uint256 _id, string memory _metadata) public {
         emit Dispute(_id, _metadata);
     }
 

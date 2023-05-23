@@ -21,7 +21,6 @@ library CampaignManager {
         address payable creator;
         address payable[] owners;
         address payable[] acceptors;
-        address payable[] workers;
         address payable[] allTimeStakeholders;
         // Stake
         FundingsManager.Fundings stake;

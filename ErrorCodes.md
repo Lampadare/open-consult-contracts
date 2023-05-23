@@ -142,5 +142,8 @@ E47 =
 E48 =
 "Can only unlock the funds after the (startGateTimestamp + taskSubmissionDecisionTime) after the cleanup"
 
-- pass objects so you can mutate stuff better, don't use \_ids
-- toSettled is big fruit
+E49 =
+"All tasks must have workers assigned"
+
+E50 =
+"All tasks must have submissions"
