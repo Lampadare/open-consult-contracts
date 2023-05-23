@@ -15,6 +15,10 @@
 - just remove from funding instead of adding to amountused
 
 - CHECKERFUNCTIONS:
+
   - ensure it exists
   - lazyupdater
   - other checks
+
+- toSettledStatus
+  - check if we are in gate and in settled period
