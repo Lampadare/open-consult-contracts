@@ -5,7 +5,6 @@ pragma solidity ^0.8.9;
 import "./CampaignManager.sol";
 import "./ProjectManager.sol";
 import "./TaskManager.sol";
-import "./ApplicationManager.sol";
 import "./FundingsManager.sol";
 import "./Utilities.sol";
 
@@ -19,8 +18,8 @@ contract StandardCampaign {
     using FundingsManager for FundingsManager.Fundings[];
     using CampaignManager for CampaignManager.Campaign;
     using ProjectManager for ProjectManager.Project;
+    using ProjectManager for ProjectManager.Application;
     using TaskManager for TaskManager.Task;
-    using ApplicationManager for ApplicationManager.Application;
 
     /// DEVELOPER FUNCTIONS (ONLY FOR TESTING) 🧑‍💻🧑‍💻🧑‍💻🧑‍💻🧑‍💻
     address public contractMaster;
@@ -39,7 +38,7 @@ contract StandardCampaign {
     uint256 public taskCount = 0;
 
     // Mapping of task IDs to tasks, IDs are numbers starting from 0
-    mapping(uint256 => ApplicationManager.Application) public applications;
+    mapping(uint256 => ProjectManager.Application) public applications;
     uint256 public applicationCount = 0;
 
     // Minimum stake required to create a Private campaign
@@ -282,13 +281,6 @@ contract StandardCampaign {
         campaign.refundOwnFunding(_fundingID);
     }
 
-    // Use amounts of funds by going through each funding and using until the expense is covered ✅
-    function fundUseAmount(uint256 _id, uint256 _expense) internal {
-        checkCampaignExists(_id);
-        CampaignManager.Campaign storage campaign = campaigns[_id];
-        campaign.fundings.fundUseAmount(_expense);
-    }
-
     // Cleanup all tasks that are not closed at the right time for all projects ✅
     function cleanUpNotClosedTasksForAllProjects(uint256 _id) internal {
         CampaignManager.Campaign storage campaign = campaigns[_id];
@@ -387,12 +379,7 @@ contract StandardCampaign {
     // Close project ✅
     function closeProject(
         uint256 _id
-    )
-        public
-        isProjectRunning(_id)
-        isCampaignRunning(projects[_id].parentCampaign)
-        isCampaignOwner(projects[_id].parentCampaign)
-    {
+    ) public isCampaignOwner(projects[_id].parentCampaign) {
         checkProjectExists(_id);
 
         ProjectManager.Project storage project = projects[_id];
@@ -509,8 +496,6 @@ contract StandardCampaign {
                 project.status = ProjectManager.ProjectStatus.Stage;
                 // delete all votes
                 delete project.fastForward;
-
-                // LOCK FUNDS HERE ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
                 return;
             } else if (toStage) {
                 // adjust lateness
@@ -519,8 +504,6 @@ contract StandardCampaign {
                 project.status = ProjectManager.ProjectStatus.Stage;
                 // delete all votes
                 delete project.fastForward;
-
-                // LOCK FUNDS HERE ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
                 return;
             }
         }
@@ -541,6 +524,71 @@ contract StandardCampaign {
                 return;
             }
         }
+    }
+
+    // Conditions for going to Stage ✅
+    function toStageConditions(uint256 _id) public view returns (bool, bool) {
+        ProjectManager.Project storage project = projects[_id];
+
+        bool currentStatusValid = project.status ==
+            ProjectManager.ProjectStatus.Settled;
+        bool projectHasWorkers = project.workers.length > 0;
+        bool allTasksHaveWorkers = true;
+        bool inStagePeriod = block.timestamp >=
+            project.nextMilestone.startStageTimestamp;
+
+        // For fast forward
+        bool stillInSettledPeriod = block.timestamp <
+            project.nextMilestone.startStageTimestamp;
+
+        // Ensure all tasks have workers
+        for (uint256 i = 0; i < project.childTasks.length; i++) {
+            if (tasks[project.childTasks[i]].worker == address(0)) {
+                allTasksHaveWorkers = false;
+                return (false, false);
+            }
+        }
+
+        // All conditions must be true to go to stage
+        return (
+            currentStatusValid && projectHasWorkers && inStagePeriod,
+            currentStatusValid &&
+                projectHasWorkers &&
+                stillInSettledPeriod &&
+                checkFastForwardStatus(_id)
+        );
+    }
+
+    // Conditions for going to Gate ✅
+    function toGateConditions(uint256 _id) public view returns (bool, bool) {
+        checkProjectExists(_id);
+        ProjectManager.Project storage project = projects[_id];
+        bool currentStatusValid = project.status ==
+            ProjectManager.ProjectStatus.Stage;
+        bool inGatePeriod = block.timestamp >=
+            project.nextMilestone.startGateTimestamp;
+
+        // For fast forward
+        bool stillInStagePeriod = block.timestamp <
+            project.nextMilestone.startGateTimestamp;
+        bool allTasksHaveSubmissions = true;
+
+        for (uint256 i = 0; i < project.childTasks.length; i++) {
+            if (
+                tasks[project.childTasks[i]].submission.status ==
+                TaskManager.SubmissionStatus.None
+            ) {
+                allTasksHaveSubmissions = false;
+            }
+        }
+
+        return (
+            currentStatusValid && inGatePeriod,
+            currentStatusValid &&
+                stillInStagePeriod &&
+                allTasksHaveSubmissions &&
+                checkFastForwardStatus(_id)
+        );
     }
 
     // Figure out where we are and where we should be and fix is needed ✅
@@ -615,7 +663,7 @@ contract StandardCampaign {
         project.nextMilestone.startSettledTimestamp += lateness;
     }
 
-    // Update project milestones ✅
+    // Update project milestones 📍
     function typicalProjectMilestonesUpdate(
         uint256 _id,
         uint256 _nextStageStartTimestamp,
@@ -709,7 +757,7 @@ contract StandardCampaign {
         refundWorkerEnrolStake(_id, msg.sender);
     }
 
-    // Remove worker from project by owner ✅
+    // Remove worker from project by owner 📍
     function fireWorker(
         uint256 _id,
         address _worker
@@ -743,7 +791,7 @@ contract StandardCampaign {
         refundWorkerEnrolStake(_id, _worker);
     }
 
-    // Internal function to refund worker enrol stake and delete appliction ✅
+    // Internal function to refund worker enrol stake and delete appliction 📍
     function refundWorkerEnrolStake(
         uint256 _id,
         address _worker
@@ -759,7 +807,7 @@ contract StandardCampaign {
 
         // Refund stake
         for (uint256 i = 0; i < project.applications.length; i++) {
-            ApplicationManager.Application storage application = applications[
+            ProjectManager.Application storage application = applications[
                 project.applications[i]
             ];
             // Find worker's application, ensure it was accepted and not refunded
@@ -798,33 +846,27 @@ contract StandardCampaign {
         // ismoneyintended
         // ismorethanenrolstake
 
+        // Get structs
         ProjectManager.Project storage project = projects[_id];
         CampaignManager.Campaign storage campaign = campaigns[
             project.parentCampaign
         ];
-
-        require(!project.applicationRequired, "E33");
-        require(!checkIsProjectWorker(_id), "E34");
-
-        // Creates application to deal with stake
-        ApplicationManager.Application storage application = applications[
+        ProjectManager.Application storage application = applications[
             applicationCount
         ];
-        application.metadata = "_";
-        application.applicant = msg.sender;
-        application.accepted = true;
-        application.enrolStake.funder = payable(msg.sender);
-        application.enrolStake.funding = _stake;
-        application.enrolStake.amountUsed = 0;
-        application.enrolStake.fullyRefunded = false;
-        application.parentProject = _id;
 
-        project.applications.push(applicationCount);
+        // Can't be a worker already
+        require(!project.checkIsProjectWorker(), "E34");
+
+        // Create application
+        project.workerEnrolNoApplication(
+            campaign,
+            application,
+            _id,
+            applicationCount
+        );
+
         applicationCount++;
-
-        project.workers.push(msg.sender);
-        campaign.allTimeStakeholders.push(payable(msg.sender));
-        campaign.workers.push(payable(msg.sender));
     }
 
     // Apply to project to become Worker ✅
@@ -846,23 +888,14 @@ contract StandardCampaign {
         statusFixer(_id);
 
         ProjectManager.Project storage project = projects[_id];
-        require(project.applicationRequired, "E35");
-
-        require(!checkIsProjectWorker(_id), "E36");
-
-        ApplicationManager.Application storage application = applications[
+        ProjectManager.Application storage application = applications[
             applicationCount
         ];
-        application.metadata = _metadata;
-        application.applicant = msg.sender;
-        application.accepted = false;
-        application.enrolStake.funder = payable(msg.sender);
-        application.enrolStake.funding = _stake;
-        application.enrolStake.amountUsed = 0;
-        application.enrolStake.fullyRefunded = false;
-        application.parentProject = _id;
 
-        project.applications.push(applicationCount);
+        require(!project.checkIsProjectWorker(), "E36");
+
+        project.applyToProject(application, _metadata, _id, applicationCount);
+
         applicationCount++;
         return applicationCount - 1;
     }
@@ -882,7 +915,7 @@ contract StandardCampaign {
         // campaignacceptor
         checkApplicationExists(_applicationID);
 
-        ApplicationManager.Application storage application = applications[
+        ProjectManager.Application storage application = applications[
             _applicationID
         ];
         ProjectManager.Project storage project = projects[
@@ -1018,75 +1051,6 @@ contract StandardCampaign {
 
     /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// PROJECT READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
-
-    // Conditions for going to Stage ✅
-    function toStageConditions(uint256 _id) public view returns (bool, bool) {
-        ProjectManager.Project storage project = projects[_id];
-
-        bool currentStatusValid = project.status ==
-            ProjectManager.ProjectStatus.Settled;
-        bool projectHasWorkers = project.workers.length > 0;
-        bool allTasksHaveWorkers = true;
-        bool inStagePeriod = block.timestamp >=
-            project.nextMilestone.startStageTimestamp;
-
-        // For fast forward
-        bool stillInSettledPeriod = block.timestamp <
-            project.nextMilestone.startStageTimestamp;
-
-        // Ensure all tasks have workers
-        for (uint256 i = 0; i < project.childTasks.length; i++) {
-            if (tasks[project.childTasks[i]].worker == address(0)) {
-                allTasksHaveWorkers = false;
-                return (false, false);
-            }
-        }
-
-        // All conditions must be true to go to stage
-        return (
-            allTasksHaveWorkers &&
-                currentStatusValid &&
-                projectHasWorkers &&
-                inStagePeriod,
-            allTasksHaveWorkers &&
-                currentStatusValid &&
-                projectHasWorkers &&
-                stillInSettledPeriod &&
-                checkFastForwardStatus(_id)
-        );
-    }
-
-    // Conditions for going to Gate ✅
-    function toGateConditions(uint256 _id) public view returns (bool, bool) {
-        checkProjectExists(_id);
-        ProjectManager.Project storage project = projects[_id];
-        bool currentStatusValid = project.status ==
-            ProjectManager.ProjectStatus.Stage;
-        bool inGatePeriod = block.timestamp >=
-            project.nextMilestone.startGateTimestamp;
-
-        // For fast forward
-        bool stillInStagePeriod = block.timestamp <
-            project.nextMilestone.startGateTimestamp;
-        bool allTasksHaveSubmissions = true;
-
-        for (uint256 i = 0; i < project.childTasks.length; i++) {
-            if (
-                tasks[project.childTasks[i]].submission.status ==
-                TaskManager.SubmissionStatus.None
-            ) {
-                allTasksHaveSubmissions = false;
-            }
-        }
-
-        return (
-            currentStatusValid && inGatePeriod,
-            currentStatusValid &&
-                stillInStagePeriod &&
-                allTasksHaveSubmissions &&
-                checkFastForwardStatus(_id)
-        );
-    }
 
     // Conditions for going to Settled ✅
     function toSettledConditions(
@@ -1228,19 +1192,6 @@ contract StandardCampaign {
             }
         }
         return isWorker;
-    }
-
-    // Get the application of a worker on a project by their address ✅
-    function getApplicationByApplicant(
-        uint256 _id,
-        address _applicant
-    ) public view returns (ApplicationManager.Application memory application) {
-        ProjectManager.Project storage project = projects[_id];
-        for (uint256 i = 0; i < project.applications.length; i++) {
-            if (applications[project.applications[i]].applicant == _applicant) {
-                return applications[project.applications[i]];
-            }
-        }
     }
 
     /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
@@ -1402,6 +1353,19 @@ contract StandardCampaign {
         } else {
             // Assign sender to task
             task.worker = payable(msg.sender);
+        }
+    }
+
+    // Get the application of a worker on a project by their address 📍
+    function getApplicationByApplicant(
+        uint256 _id,
+        address _applicant
+    ) public view returns (ProjectManager.Application memory application) {
+        ProjectManager.Project storage project = projects[_id];
+        for (uint256 i = 0; i < project.applications.length; i++) {
+            if (applications[project.applications[i]].applicant == _applicant) {
+                return applications[project.applications[i]];
+            }
         }
     }
 

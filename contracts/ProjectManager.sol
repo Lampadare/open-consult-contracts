@@ -5,7 +5,6 @@ pragma solidity ^0.8.9;
 import "./CampaignManager.sol";
 import "./TaskManager.sol";
 import "./FundingsManager.sol";
-import "./ApplicationManager.sol";
 
 library ProjectManager {
     struct Project {
@@ -41,6 +40,16 @@ library ProjectManager {
     struct Vote {
         address voter;
         bool vote;
+    }
+
+    struct Application {
+        // Description of the application
+        string metadata;
+        address applicant;
+        bool accepted;
+        FundingsManager.Fundings enrolStake;
+        // Parent Project (contains IDs)
+        uint256 parentProject;
     }
 
     enum ProjectStatus {
@@ -123,5 +132,80 @@ library ProjectManager {
             currentStatusValid &&
             projectHasWorkers &&
             inStagePeriod;
+    }
+
+    function checkIsProjectWorker(
+        Project storage _project,
+        address _worker
+    ) external view returns (bool) {
+        for (uint256 i = 0; i < _project.workers.length; i++) {
+            if (_project.workers[i] == _worker) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function checkIsProjectWorker(
+        Project storage _project
+    ) external view returns (bool) {
+        for (uint256 i = 0; i < _project.workers.length; i++) {
+            if (_project.workers[i] == msg.sender) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Enrol to project as worker when no application is required ✅
+    function workerEnrolNoApplication(
+        Project storage _project,
+        CampaignManager.Campaign storage _campaign,
+        Application storage _application,
+        uint256 _id,
+        uint256 _applicationCount
+    ) external {
+        require(!_project.applicationRequired, "E33");
+
+        // Creates application to deal with stake
+
+        _application.metadata = "_";
+        _application.applicant = msg.sender;
+        _application.accepted = true;
+        _application.enrolStake.funder = payable(msg.sender);
+        _application.enrolStake.funding = msg.value;
+        _application.enrolStake.amountUsed = 0;
+        _application.enrolStake.fullyRefunded = false;
+        _application.parentProject = _id;
+
+        _project.applications.push(_applicationCount);
+
+        _project.workers.push(msg.sender);
+        _campaign.allTimeStakeholders.push(payable(msg.sender));
+        _campaign.workers.push(payable(msg.sender));
+    }
+
+    // Enrol to project as worker when application is required ✅
+    function applyToProject(
+        Project storage _project,
+        Application storage _application,
+        string memory _metadata,
+        uint256 _id,
+        uint256 _applicationCount
+    ) external {
+        require(_project.applicationRequired, "E34");
+
+        // Creates application to deal with stake
+
+        _application.metadata = _metadata;
+        _application.applicant = msg.sender;
+        _application.accepted = false;
+        _application.enrolStake.funder = payable(msg.sender);
+        _application.enrolStake.funding = msg.value;
+        _application.enrolStake.amountUsed = 0;
+        _application.enrolStake.fullyRefunded = false;
+        _application.parentProject = _id;
+
+        _project.applications.push(_applicationCount);
     }
 }
